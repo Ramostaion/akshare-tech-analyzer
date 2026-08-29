@@ -1,0 +1,29 @@
+<style>
+  body{margin:0;background:#080d13;color:#e6edf5;font:13px Inter,"Microsoft YaHei",sans-serif;letter-spacing:0}.report-head{padding:22px 28px 16px;border-bottom:1px solid #263442;background:#0e151e}.report-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.report-title h1{margin:0;font-size:24px}.report-title span{color:#8fa0b2}.report-meta{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));gap:1px;margin-top:16px;background:#263442;border:1px solid #263442}.report-meta div{padding:10px;background:#0a1118}.report-meta small{display:block;color:#8fa0b2}.report-meta strong{display:block;margin-top:4px;font-size:15px}.report-body{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;border-bottom:1px solid #263442;background:#0e151e}.report-body section{padding:16px 20px}.report-body section+section{border-left:1px solid #263442}.report-body h2{margin:0 0 9px;font-size:13px}.report-body p,.report-body li{color:#bbc7d3;line-height:1.65}.report-body ul{margin:0;padding-left:18px}.report-extra{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #263442}.report-extra section{padding:15px 20px}.report-extra section+section{border-left:1px solid #263442}.score-table{width:100%;border-collapse:collapse}.score-table td{padding:6px;border-bottom:1px solid #263442}.score-table td:last-child{text-align:right;font-weight:700}.formula{color:#9fadb9;line-height:1.7}.report-disclaimer{margin:0;padding:13px;background:#18160f;color:#d8c792;text-align:center;border-bottom:1px solid #594826}.source{color:#8fa0b2;font-size:11px;margin-top:11px}@media(max-width:800px){.report-meta{grid-template-columns:repeat(2,1fr)}.report-body,.report-extra{grid-template-columns:1fr}.report-body section+section,.report-extra section+section{border-left:0;border-top:1px solid #263442}}
+</style>
+<header class="report-head">
+  {% set labels = {"stock":"A股", "etf":"场内ETF", "cn_stock":"A股", "cn_etf":"场内ETF", "us_stock":"美股", "us_index":"美国指数", "global_future":"外盘期货"} %}
+  <div class="report-title"><h1>{{ market.security.symbol }} {{ market.security.name }}</h1><span>{{ labels.get(market.security.asset_type, market.security.asset_type) }} · {{ request.period }} · {{ request.adjust }}</span></div>
+  <div class="report-meta">
+    <div><small>最新价</small><strong>{{ "%.3f"|format(analysis.latest.close) if analysis.latest.close is not none else "--" }}</strong></div>
+    <div><small>涨跌幅</small><strong>{{ "%.2f%%"|format(analysis.latest.pct_change) if analysis.latest.pct_change is not none else "--" }}</strong></div>
+    <div><small>趋势状态</small><strong>{{ analysis.state }}</strong></div>
+    <div><small>技术评分</small><strong>{{ analysis.score }}/100</strong></div>
+    <div><small>最近支撑</small><strong>{{ "%.3f"|format(levels.supports[0].price) if levels.supports else "未识别" }}</strong></div>
+    <div><small>最近阻力</small><strong>{{ "%.3f"|format(levels.resistances[0].price) if levels.resistances else "未识别" }}</strong></div>
+    <div><small>ATR%</small><strong>{{ "%.2f%%"|format(analysis.latest.ATR_PCT) if analysis.latest.ATR_PCT is not none else "--" }}</strong></div>
+  </div>
+  <div class="source">来源：{{ market.security.data_source }} · 更新时间：{{ market.fetched_at }} · {{ "来自缓存" if market.from_cache else "本次获取" }} · 识别：{{ market.security.detection_method }} · 上游代码：{{ market.security.provider_symbol }} · 市场：{{ market.security.exchange }} · 币种：{{ market.security.currency }} · 时区：{{ market.security.timezone }} · 成交量：{{ market.volume_unit }} · 成交额：{{ market.amount_unit }}{% if market.security.series_type %} · {{ market.security.series_type }}{% endif %}</div>
+  {% if market.snapshot %}<div class="source">独立快照：最新价 {{ market.snapshot.latest if market.snapshot.latest is not none else "--" }} · 数据时间 {{ market.snapshot.source_timestamp or "未知" }} · 采集时间 {{ market.snapshot.captured_at }}</div>{% endif %}
+</header>
+<div class="report-body">
+  <section><h2>结论摘要</h2><p>{{ analysis.summary }}</p>{% if levels.scenario %}<p>参考情景：观察区间 {{ levels.scenario.observation_lower }}–{{ levels.scenario.observation_upper }}，失效位 {{ levels.scenario.invalidation }}，目标位 {{ levels.scenario.target }}，潜在盈亏比 {{ levels.scenario.reward_risk_ratio }}。{{ levels.scenario.note }}</p>{% endif %}</section>
+  <section><h2 style="color:#ff8986">偏强证据</h2><ul>{% for item in analysis.evidence.bullish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
+  <section><h2 style="color:#67d99a">偏弱证据</h2><ul>{% for item in analysis.evidence.bearish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
+  <section><h2 style="color:#f2b84b">风险提示</h2><ul>{% for item in analysis.warning %}<li>{{ item }}</li>{% endfor %}{% for item in market.quality_notes %}<li>{{ item }}</li>{% endfor %}</ul></section>
+</div>
+<div class="report-extra">
+  <section><h2>评分构成</h2><table class="score-table">{% for component in analysis.components.values() %}<tr><td>{{ component.name }}</td><td>{{ component.score }}/100</td></tr>{% endfor %}</table></section>
+  <section><h2>指标公式</h2><div class="formula">{% for item in analysis.formula_notes %}<div>{{ item }}</div>{% endfor %}</div></section>
+</div>
+<p class="report-disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。报告生成时间：{{ generated_at }}</p>

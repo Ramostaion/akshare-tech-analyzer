@@ -1,0 +1,406 @@
+const form = document.querySelector("#analyze-form");
+const result = document.querySelector("#result");
+const message = document.querySelector("#message");
+const analyzeButton = document.querySelector("#analyze-button");
+const downloadButton = document.querySelector("#download-button");
+const autoRefresh = document.querySelector("#auto-refresh");
+const refreshInterval = document.querySelector("#refresh-interval");
+const assetType = document.querySelector("#asset-type");
+const symbolInput = document.querySelector("#symbol");
+const periodSelect = document.querySelector("#period");
+const adjustSelect = document.querySelector("#adjust");
+const quickInstruments = document.querySelector("#quick-instruments");
+const favoriteButton = document.querySelector("#favorite-button");
+const favoriteContextMenu = document.querySelector("#favorite-context-menu");
+const removeFavoriteButton = document.querySelector("#remove-favorite");
+let refreshTimer = null;
+let chartResizeObserver = null;
+let chartResizeFrame = null;
+let suggestionTimer = null;
+let currentInstrument = null;
+let contextFavorite = null;
+
+const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
+const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
+
+function localDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const today = new Date();
+const twoYearsAgo = new Date(today);
+twoYearsAgo.setFullYear(today.getFullYear() - 2);
+document.querySelector("#end").value = localDate(today);
+document.querySelector("#start").value = localDate(twoYearsAgo);
+
+const marketRules = {
+  auto: { hint: "示例：600011、510300", value: "600011", pattern: "[0-9]{6}", max: 6, periods: ["daily", "weekly", "monthly", "1m", "5m", "15m", "30m", "60m"], adjustments: ["qfq", "hfq", "none"], defaultAdjust: "qfq" },
+  cn_stock: { hint: "示例：600011、600027", value: "600011", pattern: "[0-9]{6}", max: 6, periods: ["daily", "weekly", "monthly", "1m", "5m", "15m", "30m", "60m"], adjustments: ["qfq", "hfq", "none"], defaultAdjust: "qfq" },
+  cn_etf: { hint: "示例：510300、510760", value: "510300", pattern: "[0-9]{6}", max: 6, periods: ["daily", "weekly", "monthly", "1m", "5m", "15m", "30m", "60m"], adjustments: ["qfq", "hfq", "none"], defaultAdjust: "qfq" },
+  us_stock: { hint: "示例：AAPL、SPCX", value: "AAPL", pattern: "[A-Za-z0-9.-]{1,16}", max: 16, periods: ["daily", "weekly", "monthly", "1m"], adjustments: ["none", "qfq", "hfq"], defaultAdjust: "none" },
+  us_index: { hint: "支持：.IXIC、.NDX、.INX、.DJI", value: ".IXIC", pattern: "\\.(IXIC|NDX|INX|DJI)", max: 5, periods: ["daily", "weekly", "monthly"], adjustments: ["none"], defaultAdjust: "none" },
+  global_future: { hint: "支持：GC、SI、HG、CL、NG、OIL、XAU、XAG", value: "GC", pattern: "(GC|SI|HG|CL|NG|OIL|XAU|XAG)", max: 3, periods: ["daily"], adjustments: ["none"], defaultAdjust: "none" },
+};
+
+function normalizedAssetType(value) {
+  if (value === "stock") return "cn_stock";
+  if (value === "etf") return "cn_etf";
+  return value;
+}
+
+function instrumentKey(item) {
+  return `${normalizedAssetType(item.asset_type)}:${item.symbol.toUpperCase()}`;
+}
+
+function storedFavorites() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(favoritesStorageKey) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => (
+      item && typeof item.symbol === "string" && typeof item.name === "string" &&
+      marketRules[normalizedAssetType(item.asset_type)]
+    )).slice(0, 30).map((item) => ({
+      symbol: item.symbol.toUpperCase(),
+      name: item.name,
+      asset_type: normalizedAssetType(item.asset_type),
+    }));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveFavorites(items) {
+  try {
+    localStorage.setItem(favoritesStorageKey, JSON.stringify(items.slice(0, 30)));
+  } catch (_error) {
+    showMessage("浏览器未允许本地存储，本次常用变更无法保存", true);
+  }
+}
+
+function selectQuickInstrument(item) {
+  assetType.value = normalizedAssetType(item.asset_type);
+  applyMarketRules(true);
+  symbolInput.value = item.symbol;
+}
+
+function closeFavoriteContextMenu() {
+  favoriteContextMenu.classList.add("hidden");
+  contextFavorite = null;
+}
+
+function openFavoriteContextMenu(event, item) {
+  event.preventDefault();
+  contextFavorite = item;
+  favoriteContextMenu.classList.remove("hidden");
+  const width = favoriteContextMenu.offsetWidth;
+  const height = favoriteContextMenu.offsetHeight;
+  favoriteContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - width - 8)}px`;
+  favoriteContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - height - 8)}px`;
+  removeFavoriteButton.focus();
+}
+
+function renderQuickInstruments() {
+  const favorites = storedFavorites();
+  closeFavoriteContextMenu();
+  quickInstruments.replaceChildren();
+  quickInstruments.classList.toggle("empty", favorites.length === 0);
+  favorites.forEach((item) => {
+    const wrapper = document.createElement("span");
+    wrapper.className = "quick-item";
+    const codeButton = document.createElement("button");
+    codeButton.type = "button";
+    codeButton.className = "quick-code";
+    codeButton.textContent = item.symbol;
+    codeButton.title = `${item.name} · ${assetLabels[item.asset_type]}`;
+    codeButton.dataset.symbol = item.symbol;
+    codeButton.dataset.asset = item.asset_type;
+    codeButton.addEventListener("click", () => selectQuickInstrument(item));
+    wrapper.addEventListener("contextmenu", (event) => openFavoriteContextMenu(event, item));
+    wrapper.append(codeButton);
+    quickInstruments.append(wrapper);
+  });
+}
+
+function updateFavoriteButton() {
+  if (!currentInstrument) return;
+  const key = instrumentKey(currentInstrument);
+  const isStored = storedFavorites().some((item) => instrumentKey(item) === key);
+  favoriteButton.textContent = isStored ? "★" : "☆";
+  favoriteButton.classList.toggle("active", isStored);
+  favoriteButton.title = isStored ? "从常用移除" : "加入常用";
+  favoriteButton.setAttribute("aria-label", favoriteButton.title);
+}
+
+favoriteButton.addEventListener("click", () => {
+  if (!currentInstrument) return;
+  const key = instrumentKey(currentInstrument);
+  const favorites = storedFavorites();
+  const existing = favorites.some((item) => instrumentKey(item) === key);
+  saveFavorites(existing ? favorites.filter((item) => instrumentKey(item) !== key) : [...favorites, currentInstrument]);
+  renderQuickInstruments();
+  updateFavoriteButton();
+});
+
+removeFavoriteButton.addEventListener("click", () => {
+  if (!contextFavorite) return;
+  const key = instrumentKey(contextFavorite);
+  saveFavorites(storedFavorites().filter((item) => instrumentKey(item) !== key));
+  renderQuickInstruments();
+  updateFavoriteButton();
+});
+
+document.addEventListener("click", (event) => {
+  if (!favoriteContextMenu.contains(event.target)) closeFavoriteContextMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeFavoriteContextMenu();
+});
+window.addEventListener("blur", closeFavoriteContextMenu);
+window.addEventListener("resize", closeFavoriteContextMenu);
+window.addEventListener("scroll", closeFavoriteContextMenu, true);
+
+renderQuickInstruments();
+
+function applyMarketRules(resetSymbol = true) {
+  const rules = marketRules[assetType.value];
+  const previousAdjust = adjustSelect.value;
+  if (resetSymbol) symbolInput.value = rules.value;
+  symbolInput.pattern = rules.pattern;
+  symbolInput.maxLength = rules.max;
+  symbolInput.inputMode = assetType.value.startsWith("cn") || assetType.value === "auto" ? "numeric" : "text";
+  document.querySelector("#symbol-hint").textContent = rules.hint;
+  Array.from(periodSelect.options).forEach((option) => { option.disabled = !rules.periods.includes(option.value); });
+  if (!rules.periods.includes(periodSelect.value)) periodSelect.value = rules.periods[0];
+  Array.from(adjustSelect.options).forEach((option) => { option.disabled = !rules.adjustments.includes(option.value); });
+  adjustSelect.value = !resetSymbol && rules.adjustments.includes(previousAdjust) ? previousAdjust : rules.defaultAdjust;
+  adjustSelect.disabled = rules.adjustments.length === 1;
+}
+
+assetType.addEventListener("change", () => applyMarketRules(true));
+periodSelect.addEventListener("change", () => {
+  if (assetType.value === "us_stock" && periodSelect.value === "1m") {
+    adjustSelect.value = "none";
+    adjustSelect.disabled = true;
+  } else {
+    applyMarketRules(false);
+  }
+});
+symbolInput.addEventListener("input", () => {
+  clearTimeout(suggestionTimer);
+  const supported = ["us_stock", "us_index", "global_future"].includes(assetType.value);
+  const query = symbolInput.value.trim();
+  if (!supported || !query) return;
+  suggestionTimer = setTimeout(async () => {
+    try {
+      const params = new URLSearchParams({ q: query, asset_type: assetType.value });
+      const response = await fetch(`/api/instruments/search?${params}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const datalist = document.querySelector("#symbol-suggestions");
+      datalist.replaceChildren(...data.items.map((item) => {
+        const option = document.createElement("option");
+        option.value = item.symbol;
+        option.label = item.name;
+        return option;
+      }));
+    } catch (_error) {
+      // 联想失败不影响手工输入和正式分析请求。
+    }
+  }, 250);
+});
+
+function showMessage(text, isError = false) {
+  message.textContent = text;
+  message.classList.remove("hidden", "error");
+  if (isError) message.classList.add("error");
+}
+
+function setText(selector, value) {
+  document.querySelector(selector).textContent = value ?? "--";
+}
+
+function number(value, digits = 2) {
+  return value === null || value === undefined || Number.isNaN(value) ? "--" : Number(value).toFixed(digits);
+}
+
+function renderList(selector, items, emptyText = "暂无有效证据") {
+  const target = document.querySelector(selector);
+  target.replaceChildren();
+  const values = items && items.length ? items : [emptyText];
+  values.forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item;
+    target.append(li);
+  });
+}
+
+function renderResult(data) {
+  const metadata = data.metadata;
+  const security = metadata.security;
+  const analysis = data.analysis;
+  const latest = analysis.latest;
+  setText("#security-code", security.symbol);
+  setText("#security-name", security.name);
+  setText("#asset-badge", assetLabels[security.asset_type] || security.asset_type);
+  currentInstrument = {
+    symbol: security.symbol,
+    name: security.name,
+    asset_type: normalizedAssetType(security.asset_type),
+  };
+  updateFavoriteButton();
+  result.classList.toggle("global-market", ["us_stock", "us_index", "global_future"].includes(security.asset_type));
+  setText("#latest-price", number(latest.close, 3));
+  const changeNode = document.querySelector("#pct-change");
+  changeNode.textContent = latest.pct_change === null ? "--" : `${number(latest.pct_change)}%`;
+  changeNode.classList.remove("positive", "negative");
+  if (latest.pct_change > 0) changeNode.classList.add("positive");
+  if (latest.pct_change < 0) changeNode.classList.add("negative");
+  setText("#trend-state", analysis.state);
+  setText("#score", `${analysis.score}/100`);
+  setText("#score-ring", analysis.score);
+  setText("#support", data.levels.supports[0] ? number(data.levels.supports[0].price, 3) : "未识别");
+  setText("#resistance", data.levels.resistances[0] ? number(data.levels.resistances[0].price, 3) : "未识别");
+  setText("#atr-pct", latest.ATR_PCT === null ? "--" : `${number(latest.ATR_PCT)}%`);
+  setText("#summary", analysis.summary);
+  setText("#data-line", `来源：${security.data_source} · ${metadata.from_cache ? "缓存数据" : "本次获取"} · 更新：${new Date(metadata.fetched_at).toLocaleString("zh-CN", { timeZone: security.timezone || "Asia/Shanghai" })} · ${metadata.period}/${metadata.adjust} · ${metadata.rows}根K线 · ${security.exchange} · ${security.currency} · 成交量：${metadata.volume_unit} · 上游代码：${security.provider_symbol} · 识别：${security.detection_method}${security.series_type ? ` · ${security.series_type}` : ""}`);
+  const snapshotLine = document.querySelector("#snapshot-line");
+  if (metadata.snapshot) {
+    const snapshot = metadata.snapshot;
+    snapshotLine.textContent = `独立快照：最新价 ${number(snapshot.latest, 3)} · 涨跌幅 ${snapshot.pct_change == null ? "--" : `${number(snapshot.pct_change)}%`} · 数据时间 ${snapshot.source_timestamp || "未知"} · 采集时间 ${new Date(snapshot.captured_at).toLocaleString("zh-CN")}`;
+    snapshotLine.classList.remove("hidden");
+  } else {
+    snapshotLine.classList.add("hidden");
+  }
+
+  renderList("#bullish-list", analysis.evidence.bullish);
+  renderList("#bearish-list", analysis.evidence.bearish);
+  renderList("#warning-list", analysis.warning);
+  renderList("#formula-list", analysis.formula_notes);
+  renderList("#quality-list", metadata.quality_notes, "数据规范化检查通过");
+
+  const componentList = document.querySelector("#component-list");
+  componentList.replaceChildren();
+  Object.values(analysis.components).forEach((component) => {
+    const row = document.createElement("div");
+    row.className = "component";
+    const label = document.createElement("span");
+    label.textContent = component.name;
+    const track = document.createElement("div");
+    track.className = "component-track";
+    const bar = document.createElement("div");
+    bar.className = "component-bar";
+    bar.style.width = `${component.score}%`;
+    bar.title = component.reasons.map((reason) => `${reason.points >= 0 ? "+" : ""}${reason.points} ${reason.reason}`).join("\n");
+    track.append(bar);
+    const value = document.createElement("strong");
+    value.textContent = number(component.score, 0);
+    row.append(label, track, value);
+    componentList.append(row);
+  });
+
+  const indicatorList = document.querySelector("#indicator-list");
+  indicatorList.replaceChildren();
+  Object.entries(latest).forEach(([name, value]) => {
+    if (name === "close" || name === "pct_change") return;
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = name;
+    const output = document.createElement("strong");
+    output.textContent = number(value, 3);
+    item.append(label, output);
+    indicatorList.append(item);
+  });
+
+  const scenario = document.querySelector("#scenario");
+  if (data.levels.scenario) {
+    const value = data.levels.scenario;
+    scenario.textContent = `参考情景：观察区间 ${number(value.observation_lower, 3)}–${number(value.observation_upper, 3)}，失效位 ${number(value.invalidation, 3)}，目标位 ${number(value.target, 3)}，潜在盈亏比 ${number(value.reward_risk_ratio)}。${value.note}`;
+    scenario.classList.remove("hidden");
+  } else {
+    scenario.classList.add("hidden");
+  }
+
+  const chart = document.querySelector("#chart");
+  // Plotly 初始化时必须能测量到真实容器宽度，否则会回退到 700px。
+  result.classList.remove("hidden");
+  chart.innerHTML = data.chart_html;
+  chart.querySelectorAll("script").forEach((oldScript) => {
+    const script = document.createElement("script");
+    Array.from(oldScript.attributes).forEach((attribute) => script.setAttribute(attribute.name, attribute.value));
+    script.textContent = oldScript.textContent;
+    oldScript.replaceWith(script);
+  });
+  const graph = chart.querySelector(".plotly-graph-div");
+  if (graph && window.Plotly) {
+    const resizeChart = () => {
+      cancelAnimationFrame(chartResizeFrame);
+      chartResizeFrame = requestAnimationFrame(() => window.Plotly.Plots.resize(graph));
+    };
+    chartResizeObserver?.disconnect();
+    chartResizeObserver = new ResizeObserver(resizeChart);
+    chartResizeObserver.observe(chart);
+    requestAnimationFrame(() => requestAnimationFrame(resizeChart));
+  }
+  downloadButton.href = data.download_url;
+  downloadButton.classList.remove("disabled");
+  downloadButton.setAttribute("aria-disabled", "false");
+}
+
+function requestPayload(forceRefresh = false) {
+  return {
+    symbol: document.querySelector("#symbol").value.trim(),
+    asset_type: document.querySelector("#asset-type").value,
+    period: document.querySelector("#period").value,
+    adjust: document.querySelector("#adjust").value,
+    start: document.querySelector("#start").value,
+    end: document.querySelector("#end").value,
+    show_ma: document.querySelector("#show-ma").checked,
+    show_boll: document.querySelector("#show-boll").checked,
+    show_levels: document.querySelector("#show-levels").checked,
+    show_kdj: document.querySelector("#show-kdj").checked,
+    force_refresh: forceRefresh,
+  };
+}
+
+async function runAnalysis(forceRefresh = false) {
+  if (!form.reportValidity()) return;
+  analyzeButton.disabled = true;
+  showMessage(forceRefresh ? "正在刷新行情并重新计算…" : "正在获取行情、计算指标并生成离线报告…");
+  try {
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestPayload(forceRefresh)),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || "分析请求失败");
+    renderResult(data);
+    showMessage(`分析完成：${data.metadata.security.symbol} ${data.metadata.security.name}`);
+  } catch (error) {
+    showMessage(error.message || "数据源异常，请稍后重试", true);
+  } finally {
+    analyzeButton.disabled = false;
+  }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runAnalysis(false);
+});
+
+autoRefresh.addEventListener("change", () => {
+  clearInterval(refreshTimer);
+  refreshInterval.disabled = !autoRefresh.checked;
+  if (autoRefresh.checked) {
+    const seconds = Math.max(60, Number(refreshInterval.value));
+    refreshTimer = setInterval(() => runAnalysis(true), seconds * 1000);
+  }
+});
+
+refreshInterval.addEventListener("change", () => {
+  if (!autoRefresh.checked) return;
+  autoRefresh.dispatchEvent(new Event("change"));
+});

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKShare 技术分析工作台</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">AK</span>
+      <div><strong>技术分析工作台</strong><small>A股 · ETF · 美股 · 指数 · 外盘期货</small></div>
+    </div>
+    <div class="source-state"><span class="status-dot"></span> AKShare 数据源</div>
+  </header>
+
+  <main>
+    <section class="control-band" aria-label="分析参数">
+      <form id="analyze-form">
+        <label class="symbol-field">
+          <span>代码</span>
+          <input id="symbol" name="symbol" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" value="600011" required aria-describedby="symbol-hint" autocomplete="off" list="symbol-suggestions">
+          <datalist id="symbol-suggestions"></datalist>
+          <small id="symbol-hint">示例：600011、510300</small>
+        </label>
+        <label><span>市场 / 资产</span><select id="asset-type" name="asset_type"><option value="auto">A股/ETF 自动识别</option><option value="cn_stock">A股</option><option value="cn_etf">场内ETF</option><option value="us_stock">美股</option><option value="us_index">美国指数</option><option value="global_future">外盘期货</option></select></label>
+        <label><span>周期</span><select id="period" name="period"><option value="daily">日线</option><option value="weekly">周线</option><option value="monthly">月线</option><option value="1m">1分钟</option><option value="5m">5分钟</option><option value="15m">15分钟</option><option value="30m">30分钟</option><option value="60m">60分钟</option></select></label>
+        <label><span>复权</span><select id="adjust" name="adjust"><option value="qfq">前复权</option><option value="hfq">后复权</option><option value="none">不复权</option></select></label>
+        <label><span>开始日期</span><input id="start" name="start" type="date" required></label>
+        <label><span>结束日期</span><input id="end" name="end" type="date" required></label>
+        <div class="indicator-field">
+          <span>图表叠加</span>
+          <div class="toggle-row">
+            <label class="toggle"><input id="show-ma" type="checkbox" checked><span>MA</span></label>
+            <label class="toggle"><input id="show-boll" type="checkbox" checked><span>BOLL</span></label>
+            <label class="toggle"><input id="show-levels" type="checkbox" checked><span>关键位</span></label>
+            <label class="toggle"><input id="show-kdj" type="checkbox"><span>KDJ</span></label>
+          </div>
+        </div>
+        <div class="refresh-field">
+          <span>自动刷新</span>
+          <div class="refresh-controls">
+            <label class="switch" title="开启自动刷新"><input id="auto-refresh" type="checkbox"><i></i></label>
+            <select id="refresh-interval" disabled aria-label="刷新间隔"><option value="60">60秒</option><option value="120">2分钟</option><option value="300">5分钟</option></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="analyze-button" class="primary" type="submit"><span class="button-icon">▶</span><span>开始分析</span></button>
+          <a id="download-button" class="secondary disabled" aria-disabled="true" download><span class="download-icon">↓</span><span>下载离线HTML</span></a>
+        </div>
+        <div id="quick-instruments" class="quick-instruments" aria-label="常用代码"></div>
+      </form>
+    </section>
+
+    <section id="message" class="message hidden" role="status"></section>
+
+    <section id="result" class="result hidden">
+      <div class="instrument-strip">
+        <div class="instrument-title"><span id="security-code"></span><strong id="security-name"></strong><span id="asset-badge" class="badge"></span><button id="favorite-button" class="favorite-button" type="button" title="加入常用" aria-label="加入常用">☆</button></div>
+        <dl class="metrics">
+          <div><dt>最新价</dt><dd id="latest-price">--</dd></div>
+          <div><dt>涨跌幅</dt><dd id="pct-change">--</dd></div>
+          <div><dt>趋势状态</dt><dd id="trend-state">--</dd></div>
+          <div><dt>技术评分</dt><dd id="score">--</dd></div>
+          <div><dt>最近支撑</dt><dd id="support">--</dd></div>
+          <div><dt>最近阻力</dt><dd id="resistance">--</dd></div>
+          <div><dt>ATR%</dt><dd id="atr-pct">--</dd></div>
+        </dl>
+        <div id="data-line" class="data-line"></div>
+        <div id="snapshot-line" class="data-line hidden"></div>
+      </div>
+
+      <div id="chart" class="chart-shell"></div>
+
+      <div class="analysis-grid">
+        <section class="summary-panel">
+          <div class="panel-heading"><h2>结论摘要</h2><span id="score-ring" class="score-ring">--</span></div>
+          <p id="summary"></p>
+          <div id="scenario" class="scenario hidden"></div>
+        </section>
+        <section class="evidence-panel bullish"><h2>偏强证据</h2><ul id="bullish-list"></ul></section>
+        <section class="evidence-panel bearish"><h2>偏弱证据</h2><ul id="bearish-list"></ul></section>
+        <section class="evidence-panel warning"><h2>风险提示</h2><ul id="warning-list"></ul></section>
+      </div>
+
+      <div class="detail-grid">
+        <section><h2>评分构成</h2><div id="component-list"></div></section>
+        <section><h2>指标最新值</h2><div id="indicator-list" class="indicator-list"></div></section>
+        <section><h2>公式与数据质量</h2><ul id="formula-list"></ul><ul id="quality-list"></ul></section>
+      </div>
+      <p class="disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。</p>
+    </section>
+  </main>
+  <div id="favorite-context-menu" class="favorite-context-menu hidden" role="menu">
+    <button id="remove-favorite" type="button" role="menuitem">取消收藏</button>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
