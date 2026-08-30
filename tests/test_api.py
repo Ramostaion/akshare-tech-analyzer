@@ -8,7 +8,40 @@ from app.cache import SQLiteCache
 from app.config import SHANGHAI_TZ, Settings
 from app.main import app
 from app.models import MarketData, ProviderError, SecurityInfo
-from app.service import AnalyzerService
+from app.service import AnalyzerService, _similar_signal_statistics
+
+
+def test_pending_setups_use_matching_regime_history() -> None:
+    backtest = {
+        "trades": [
+            {
+                "setup": "support_reversal",
+                "regime": "LOW_VOLATILITY",
+                "r_multiple": 1.2,
+                "mfe_r": 1.8,
+                "mae_r": 0.4,
+            },
+            {
+                "setup": "support_reversal",
+                "regime": "LOW_VOLATILITY",
+                "r_multiple": -0.8,
+                "mfe_r": 0.5,
+                "mae_r": 1.0,
+            },
+        ]
+    }
+
+    result = _similar_signal_statistics(
+        backtest,
+        ["breakout", "support_reversal"],
+        "LOW_VOLATILITY",
+        triggered=False,
+    )
+
+    assert result["sample_count"] == 2
+    assert result["win_rate"] == 50
+    assert result["expected_r"] == 0.2
+    assert "尚未触发" in result["note"]
 
 
 class FixedProvider:
@@ -86,6 +119,10 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
         report = client.get(body["report_url"])
         download = client.get(body["download_url"])
     assert body["metadata"]["security"]["symbol"] == "600011"
+    assert body["quant"]["market_regime"]["regime"]
+    assert body["quant"]["score_type"] == "RULE_SCORE"
+    assert "expectancy_r" in body["quant"]["backtest"]["metrics"]
+    assert body["analysis"]["technical_score_label"] == "Market / Technical State Score"
     assert body["analysis"]["state"] != "数据不足"
     assert "Plotly.newPlot" in body["chart_html"]
     assert '"dragmode":"pan"' in body["chart_html"]

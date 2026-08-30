@@ -37,6 +37,13 @@ def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """运行配置；环境变量可覆盖所有涉及部署和缓存的值。"""
@@ -62,6 +69,13 @@ class Settings:
     level_price_pct: float = 0.008
     level_atr_factor: float = 0.5
     level_min_score: float = 1.35
+    execution_entry_price: str = "next_open"
+    execution_commission_rate: float = 0.0003
+    execution_slippage_bps: float = 5.0
+    execution_t_plus_one_cn: bool = True
+    execution_max_holding_bars: int = 20
+    execution_target_r: float = 2.0
+    execution_atr_stop: float = 2.0
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -88,6 +102,17 @@ class Settings:
             level_price_pct=_env_float("LEVEL_PRICE_PCT", 0.008),
             level_atr_factor=_env_float("LEVEL_ATR_FACTOR", 0.5),
             level_min_score=_env_float("LEVEL_MIN_SCORE", 1.35),
+            execution_entry_price=(
+                os.getenv("EXECUTION_ENTRY_PRICE", "next_open")
+                if os.getenv("EXECUTION_ENTRY_PRICE", "next_open") in {"next_open", "next_close"}
+                else "next_open"
+            ),
+            execution_commission_rate=_env_float("EXECUTION_COMMISSION_RATE", 0.0003),
+            execution_slippage_bps=_env_float("EXECUTION_SLIPPAGE_BPS", 5.0),
+            execution_t_plus_one_cn=_env_bool("EXECUTION_T_PLUS_ONE_CN", True),
+            execution_max_holding_bars=_env_int("EXECUTION_MAX_HOLDING_BARS", 20),
+            execution_target_r=_env_float("EXECUTION_TARGET_R", 2.0, 0.1),
+            execution_atr_stop=_env_float("EXECUTION_ATR_STOP", 2.0, 0.1),
         )
 
     def ensure_directories(self) -> None:

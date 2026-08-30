@@ -1,16 +1,25 @@
 # 项目继续开发记录
 
-更新日期：2026-08-29（Asia/Shanghai）
+更新日期：2026-08-30（Asia/Shanghai）
 
 ## 当前状态
 
-- 项目版本：`0.2.0`
+- 项目版本：`0.3.0`
 - 项目路径：`C:\Users\Elaina\Desktop\stock\akshare-tech-analyzer`
-- 当前没有未完成的代码修改任务，最近一项“动态常用收藏与右键取消收藏”已经完成。
+- “可解释、可回测、可统计验证的量化技术信号研究平台”第一版增量改造已经完成。
 - 临时验证服务均已停止；正常启动端口仍为 `8000`。
-- 当前目录没有 Git 元数据，无法通过 `git diff/status` 追踪改动。
+- Git 元数据可用；工作树包含本次 `0.3.0` 量化升级改动，尚未提交。
 
 ## 已完成内容
+
+### 0.3.0 量化信号研究平台
+
+- 新增 Factor、Market Regime、四类 Setup 和结构化 TradingSignal 分层。
+- 新增下一根执行、费用、滑点、T+1、Triple Barrier、TradeRecord 和完整绩效统计。
+- 新增 Factor 分桶、参数扫描、时间序列切分、Walk Forward 与 Regime 分层研究工具。
+- 新增基于右侧确认 Pivot、ATR ZigZag 和硬规则的 Elliott Wave Top-N 候选。
+- Web API、页面和离线报告向后兼容接入量化结果，规则分与历史概率明确分离。
+- README 已记录无未来函数约束及 Stop/Target 同根时按 Stop 处理的保守规则。
 
 ### 基础平台
 
@@ -40,10 +49,11 @@
 ## 已执行验证
 
 - `ruff check .`：通过。
-- `pytest -q`：`51 passed`，仅有一条第三方 `StarletteDeprecationWarning`。
+- `pytest -q`：`89 passed`，仅有一条第三方 `StarletteDeprecationWarning`。
 - FastAPI 导入、`/health`、首页和静态资源：通过。
 - Playwright + 本机 Edge：1440px 桌面及 390px 移动端无重叠、无横向溢出、无控制台错误。
 - 收藏浏览器验证：空列表、添加、刷新持久化、中文 tooltip、右键菜单和取消收藏均通过。
+- 量化 UI 离线 Playwright：1440px 与 390px 均无横向溢出或控制台错误。
 - 真实数据成功：`.IXIC`、`.NDX`、`.INX`、`GC`、`SI`、`CL`；期货快照成功。
 - `docker compose config --quiet`：通过。
 

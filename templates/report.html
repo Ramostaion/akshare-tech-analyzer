@@ -8,7 +8,7 @@
     <div><small>最新价</small><strong>{{ "%.3f"|format(analysis.latest.close) if analysis.latest.close is not none else "--" }}</strong></div>
     <div><small>涨跌幅</small><strong>{{ "%.2f%%"|format(analysis.latest.pct_change) if analysis.latest.pct_change is not none else "--" }}</strong></div>
     <div><small>趋势状态</small><strong>{{ analysis.state }}</strong></div>
-    <div><small>技术评分</small><strong>{{ analysis.score }}/100</strong></div>
+    <div><small>技术状态评分</small><strong>{{ analysis.score }}/100</strong></div>
     <div><small>最近支撑</small><strong>{{ "%.3f"|format(levels.supports[0].price) if levels.supports else "未识别" }}</strong></div>
     <div><small>最近阻力</small><strong>{{ "%.3f"|format(levels.resistances[0].price) if levels.resistances else "未识别" }}</strong></div>
     <div><small>ATR%</small><strong>{{ "%.2f%%"|format(analysis.latest.ATR_PCT) if analysis.latest.ATR_PCT is not none else "--" }}</strong></div>
@@ -22,6 +22,21 @@
   <section><h2 style="color:#67d99a">偏弱证据</h2><ul>{% for item in analysis.evidence.bearish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
   <section><h2 style="color:#f2b84b">风险提示</h2><ul>{% for item in analysis.warning %}<li>{{ item }}</li>{% endfor %}{% for item in market.quality_notes %}<li>{{ item }}</li>{% endfor %}</ul></section>
 </div>
+{% set signal = quant.current_signal if quant else none %}
+{% set history = quant.historical_similar if quant else {} %}
+{% set qmetrics = quant.backtest.metrics if quant and quant.backtest else {} %}
+<div class="report-extra">
+  <section><h2>Market Regime / Trading Setup</h2><div class="formula">{{ quant.market_regime.regime if quant else "INSUFFICIENT_DATA" }}；置信度 {{ "%.1f%%"|format(quant.market_regime.confidence * 100) if quant else "--" }}。<div>当前Setup：{% for item in quant.current_setups %}{{ item.setup }}{{ "（已触发）" if item.triggered else "（等待触发）" }}{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</div></div></section>
+  <section><h2>Signal / Risk Reward</h2><div class="formula">{% if signal %}Signal Quality Score：{{ signal.score }}/100（规则分，不是上涨概率）。<div>Entry：下一交易日开盘；参考 {{ signal.entry_reference }}；Stop {{ signal.stop_price or "--" }}；Target 1 {{ signal.target_1 or "--" }}；Target 2 {{ signal.target_2 or "--" }}；Reward/Risk {{ signal.reward_risk_ratio or "--" }}。</div>{% else %}当前没有已触发交易信号。{% endif %}</div></section>
+</div>
+<div class="report-extra">
+  <section><h2>历史类似信号统计</h2><div class="formula">样本 {{ history.sample_count or 0 }}；历史胜率 {{ history.win_rate if history.win_rate is not none else "--" }}%；Expected R {{ history.expected_r if history.expected_r is not none else "--" }}；Median MFE {{ history.median_mfe_r if history.median_mfe_r is not none else "--" }}R；Median MAE {{ history.median_mae_r if history.median_mae_r is not none else "--" }}R。<div>{{ history.note or "历史统计不代表未来收益。" }}</div></div></section>
+  <section><h2>可执行回测统计</h2><div class="formula">交易 {{ qmetrics.trade_count or 0 }}；胜率 {{ qmetrics.win_rate if qmetrics.win_rate is not none else "--" }}%；Expectancy {{ qmetrics.expectancy_r if qmetrics.expectancy_r is not none else "--" }}R；Profit Factor {{ qmetrics.profit_factor if qmetrics.profit_factor is not none else "--" }}。<div>累计收益 {{ qmetrics.cumulative_return if qmetrics.cumulative_return is not none else "--" }}%；最大回撤 {{ qmetrics.max_drawdown if qmetrics.max_drawdown is not none else "--" }}%。</div></div></section>
+</div>
+<div class="report-extra">
+  <section><h2>Factor Snapshot</h2><div class="formula">{% for name, value in quant.factor_snapshot.items() %}<div>{{ name }}：{{ value if value is not none else "--" }}</div>{% endfor %}</div></section>
+  <section><h2>Wave Candidates</h2><div class="formula">{% for candidate in quant.wave.candidates %}<div>候选{{ loop.index }}：{{ candidate.pattern }}，当前浪 {{ candidate.current_wave }}，置信度 {{ "%.1f%%"|format(candidate.confidence * 100) }}，目标区 {{ candidate.projection.primary_zone|join("–") }}，无效位 {{ candidate.projection.invalidation or "--" }}。</div>{% else %}<div>暂无通过硬规则的候选浪型。</div>{% endfor %}<div>{{ quant.wave.note if quant else "" }}</div></div></section>
+</div>
 <div class="report-extra">
   <section><h2>评分构成</h2><table class="score-table">{% for component in analysis.components.values() %}<tr><td>{{ component.name }}</td><td>{{ component.score }}/100</td></tr>{% endfor %}</table></section>
   <section><h2>指标公式</h2><div class="formula">{% for item in analysis.formula_notes %}<div>{{ item }}</div>{% endfor %}</div></section>
@@ -30,4 +45,4 @@
   <section><h2>历史信号回测</h2><div class="formula">{{ analysis.backtest.method }}；共{{ analysis.backtest.signals }}次信号；成本{{ analysis.backtest.cost_rate }}%。{% for horizon, result in analysis.backtest.results.items() %}<div>{{ horizon }}根：样本{{ result.all.samples }}，胜率{{ result.all.win_rate if result.all.win_rate is not none else "--" }}%，平均收益{{ result.all.average_return if result.all.average_return is not none else "--" }}%。</div>{% endfor %}</div></section>
   <section><h2>缓存与数据质量</h2><div class="formula">模式：{{ market.cache_status.mode }}；覆盖：{{ market.cache_status.coverage_start or "--" }} 至 {{ market.cache_status.coverage_end or "--" }}；本次新增{{ market.cache_status.new_rows or 0 }}根。<div>质量：{{ market.data_quality.status }}；有效K线{{ market.data_quality.rows }}根。</div></div></section>
 </div>
-<p class="report-disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。报告生成时间：{{ generated_at }}</p>
+<p class="report-disclaimer">仅为算法技术分析结果，不构成投资建议。历史统计不代表未来收益，信号仅为算法研究结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。报告生成时间：{{ generated_at }}</p>

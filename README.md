@@ -12,6 +12,8 @@
 - Plotly K 线按市场切换涨跌颜色，包含成交量、MACD、RSI、可选 KDJ、关键位价格带和 MACD 事件标记。
 - FastAPI 工作台、JSON API、CLI、SQLite JSON 缓存、离线单文件报告、Docker/Compose。
 - 工作台可将当前分析品种加入“常用”，收藏保存在浏览器本地；悬停代码显示中文名称，右键可取消收藏。
+- 新增因果 Factor、Market Regime、四类 Setup、结构化 Signal、独立执行模型、Triple Barrier、完整交易记录与按 Regime 分层的绩效统计。
+- 新增时间序列研究工具和第一版 Elliott Wave Top-N 候选；波浪结果不声称唯一正确浪型。
 - 自动刷新默认关闭，开启后的最短间隔为 60 秒。AKShare 1 分钟历史通常仅覆盖最近若干交易日，并非交易所级推送。
 
 ## 市场与数据源
@@ -135,6 +137,48 @@ python -m app.cli --symbol GC --asset-type global_future --period daily --start 
 - ATR% ≤ 1.5%：`+8`；1.5%～3%：不加减；3%～5%：`-8`；超过 5%：`-15`。
 
 总分状态：`≥70 偏强趋势`、`58～69 震荡偏强`、`43～57 中性震荡`、`30～42 震荡偏弱`、`<30 偏弱趋势`。少于 20 根 K 线固定显示“数据不足”。状态描述不等同于买入或卖出信号。
+
+## 可回测量化信号架构
+
+量化管线严格分层为：
+
+```text
+Indicator → Factor → Market Regime → Setup → Signal
+          → Order → Execution → Position → Triple Barrier → TradeRecord → Statistics
+```
+
+- `indicators.py` 只计算原始技术指标。
+- `factors.py` 输出连续特征，例如价格相对均线的 ATR 距离、收益、斜率、量比、波动率分位、最大回撤和因果关键位距离。窗口不足或分母无效时保持 `NaN`。
+- `regime.py` 确定性识别 `UPTREND`、`DOWNTREND`、`RANGE`、`HIGH_VOLATILITY`、`LOW_VOLATILITY` 或 `INSUFFICIENT_DATA`。
+- `setups.py` 只定义 Trend Pullback、Breakout、Support Reversal、Trend Breakdown 四类结构，Setup 与收盘 Trigger 分开。
+- `signals.py` 生成统一 `TradingSignal`；页面展示的 Signal Quality Score 是规则质量分，不是上涨概率。只有历史样本达到最低数量时才单独显示历史概率。
+- `execution.py` 处理下一根成交、手续费、滑点、T+1 和不可成交数据状态；当前 OHLCV 无法可靠区分所有涨跌停成交状态，因此保留明确 warning，不伪造成交规则。
+- `backtest.py` 生成完整 `TradeRecord`，`metrics.py` 计算 Expectancy、Profit Factor、回撤、累计/年化收益、Sharpe、MFE 和 MAE，并按 Regime 分组。
+- `research.py` 提供 Factor 分桶、训练集参数扫描、连续时间切分和基础 Walk Forward；禁止随机 shuffle，也不把全历史最优参数直接当作生产参数。
+- `wave/` 使用右侧确认 Swing、ATR ZigZag 和硬规则输出 Top-N 候选，Fib 只参与评分。
+
+现有 0～100 分已明确命名为 `Market / Technical State Score`，继续用于描述市场技术状态；`Signal Quality Score` 与历史胜率、Expected R 分开展示，85 分绝不表示 85% 上涨概率。
+
+### 无未来函数与成交约定
+
+- 所有滚动值只使用当前与此前数据；突破阈值使用 `rolling(...).max().shift(1)`。
+- Swing/Pivot 只有右侧确认窗口完成后才发布，历史关键位 Factor 按该发布时间逐根计算。
+- 收盘信号默认最早按下一交易日开盘成交，可通过 `EXECUTION_ENTRY_PRICE=next_close` 改为下一交易日收盘成交；不会在信号当根收盘成交。
+- Triple Barrier 从可卖出的第一根开始逐根检查 Upper、Lower、Time Barrier，绝不使用整个未来窗口最高/最低直接贴标签。
+- 同一根 K 线同时触及 Stop 和 Target 时，由于 OHLC 无法还原日内先后，统一采用保守规则：**按 Stop/Loss 处理**。
+- A股/ETF 默认启用 T+1，海外市场默认关闭；零成交量、价格缺失或没有下一根时订单不成交。
+
+执行参数可通过 `.env` 配置：
+
+```text
+EXECUTION_ENTRY_PRICE=next_open
+EXECUTION_COMMISSION_RATE=0.0003
+EXECUTION_SLIPPAGE_BPS=5
+EXECUTION_T_PLUS_ONE_CN=true
+EXECUTION_MAX_HOLDING_BARS=20
+EXECUTION_TARGET_R=2.0
+EXECUTION_ATR_STOP=2.0
+```
 
 ## 支撑阻力
 

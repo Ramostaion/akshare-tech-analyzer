@@ -237,6 +237,117 @@ function renderList(selector, items, emptyText = "暂无有效证据") {
   });
 }
 
+function renderRows(selector, values) {
+  const target = document.querySelector(selector);
+  target.replaceChildren();
+  (values.length ? values : ["暂无可用数据"]).forEach((value) => {
+    const row = document.createElement("div");
+    row.textContent = value;
+    target.append(row);
+  });
+}
+
+const setupLabels = {
+  trend_pullback: "趋势回踩",
+  breakout: "突破",
+  support_reversal: "支撑反转",
+  trend_breakdown: "趋势破位退出",
+};
+
+function priceText(value, currency) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  const symbols = { CNY: "¥", USD: "$", HKD: "HK$", EUR: "€", JPY: "¥" };
+  return `${symbols[currency] || `${currency || ""} `}${number(value, 2)}`;
+}
+
+function renderQuant(quant, security) {
+  const regime = quant?.market_regime || {};
+  const signal = quant?.current_signal;
+  const setups = quant?.current_setups || [];
+  const activeSetup = signal
+    ? `${setupLabels[signal.setup] || signal.setup}${signal.direction === "long" ? "确认" : ""}`
+    : setups.length
+      ? setups.map((item) => (
+        `${setupLabels[item.setup] || item.setup}${item.triggered ? "确认" : "观察"}`
+      )).join(" / ")
+      : "暂无明确 Setup";
+  const signalScore = signal?.score;
+  setText("#overview-setup", activeSetup);
+  setText("#overview-signal-score", signalScore == null ? "等待触发" : number(signalScore, 0));
+  document.querySelector("#signal-score-fill").style.width = `${signalScore || 0}%`;
+  renderRows("#quant-signal", [
+    `市场状态：${regime.regime || "INSUFFICIENT_DATA"} · 置信度${number((regime.confidence || 0) * 100, 1)}%`,
+    `当前Setup：${setups.length ? setups.map((item) => `${item.setup}${item.triggered ? "（已触发）" : "（等待触发）"}`).join("、") : "无"}`,
+    `Signal Quality Score：${signal ? `${number(signal.score, 1)}/100（规则分，不是上涨概率）` : "无已触发信号"}`,
+    ...(regime.evidence || []),
+  ]);
+  renderRows("#quant-risk", signal ? [
+    `方向：${signal.direction} · 收盘参考价${number(signal.entry_reference, 3)} · 默认下一交易日开盘执行`,
+    `Stop / Invalidation：${number(signal.stop_price, 3)}`,
+    `Target 1：${number(signal.target_1, 3)} · Target 2：${number(signal.target_2, 3)}`,
+    `Reward/Risk：${number(signal.reward_risk_ratio, 2)}`,
+  ] : []);
+  const history = quant?.historical_similar || {};
+  setText("#overview-samples", `${history.sample_count || 0} 次`);
+  setText(
+    "#overview-win-rate",
+    history.win_rate == null ? "--" : `${number(history.win_rate, 1)}%`,
+  );
+  setText(
+    "#overview-expected-r",
+    history.expected_r == null
+      ? "--"
+      : `${history.expected_r >= 0 ? "+" : ""}${number(history.expected_r, 2)}R`,
+  );
+  const currency = security?.currency;
+  const pendingText = "等待 Trigger 后计算";
+  setText(
+    "#overview-entry-zone",
+    signal?.entry_zone_lower != null && signal?.entry_zone_upper != null
+      ? `${priceText(signal.entry_zone_lower, currency)} – ${priceText(signal.entry_zone_upper, currency)}`
+      : pendingText,
+  );
+  setText("#overview-stop", signal ? priceText(signal.stop_price, currency) : pendingText);
+  setText("#overview-target-1", signal ? priceText(signal.target_1, currency) : pendingText);
+  setText("#overview-target-2", signal ? priceText(signal.target_2, currency) : pendingText);
+  setText(
+    "#overview-reward-risk",
+    signal?.reward_risk_ratio == null
+      ? pendingText
+      : `1 : ${number(signal.reward_risk_ratio, 1)}`,
+  );
+  renderRows("#quant-history", [
+    `样本数：${history.sample_count || 0}`,
+    `历史胜率：${history.win_rate == null ? "--" : `${number(history.win_rate)}%`}`,
+    `Expected R：${number(history.expected_r, 3)}`,
+    `Median MFE：${number(history.median_mfe_r, 3)}R · Median MAE：${number(history.median_mae_r, 3)}R`,
+    history.note || "历史统计不代表未来收益。",
+  ]);
+  const wave = quant?.wave || {};
+  renderRows("#wave-candidates", (wave.candidates || []).map((candidate, index) => (
+    `候选${index + 1}：${candidate.pattern} · 当前浪${candidate.current_wave} · `
+      + `置信度${number(candidate.confidence * 100, 1)}% · 目标区${(candidate.projection?.primary_zone || []).join("–")}`
+  )));
+  const factorTarget = document.querySelector("#factor-snapshot");
+  factorTarget.replaceChildren();
+  Object.entries(quant?.factor_snapshot || {}).forEach(([name, value]) => {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = name;
+    const output = document.createElement("strong");
+    output.textContent = number(value, 4);
+    item.append(label, output);
+    factorTarget.append(item);
+  });
+  const metrics = quant?.backtest?.metrics || {};
+  renderRows("#quant-backtest", [
+    `交易数：${metrics.trade_count || 0} · 胜率${metrics.win_rate == null ? "--" : `${number(metrics.win_rate)}%`}`,
+    `Expectancy：${number(metrics.expectancy_r, 3)}R · Profit Factor：${number(metrics.profit_factor, 3)}`,
+    `累计收益：${metrics.cumulative_return == null ? "--" : `${number(metrics.cumulative_return)}%`} · 最大回撤${metrics.max_drawdown == null ? "--" : `${number(metrics.max_drawdown)}%`}`,
+    `平均持有：${number(metrics.average_holding_bars, 1)}根 · Sharpe：${number(metrics.sharpe, 3)}`,
+  ]);
+}
+
 function renderResult(data) {
   const metadata = data.metadata;
   const security = metadata.security;
@@ -262,6 +373,7 @@ function renderResult(data) {
   setText("#market-regime", analysis.market_regime?.label);
   setText("#score", `${analysis.score}/100`);
   setText("#score-ring", analysis.score);
+  document.querySelector("#technical-score-fill").style.width = `${analysis.score}%`;
   setText("#support", data.levels.supports[0] ? number(data.levels.supports[0].price, 3) : "未识别");
   setText("#resistance", data.levels.resistances[0] ? number(data.levels.resistances[0].price, 3) : "未识别");
   setText("#atr-pct", latest.ATR_PCT === null ? "--" : `${number(latest.ATR_PCT)}%`);
@@ -281,6 +393,7 @@ function renderResult(data) {
   renderList("#warning-list", analysis.warning);
   renderList("#formula-list", analysis.formula_notes);
   renderList("#quality-list", metadata.quality_notes, "数据规范化检查通过");
+  renderQuant(data.quant || analysis.quant || {}, security);
 
   const backtest = analysis.backtest || {};
   const tenBar = backtest.results?.["10"]?.all;

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akshare-tech-analyzer"
-version = "0.2.0"
+version = "0.3.0"
 description = "基于 AKShare 的中国证券、美股、美国指数与外盘期货技术分析工作台"
 readme = "README.md"
 requires-python = ">=3.11"

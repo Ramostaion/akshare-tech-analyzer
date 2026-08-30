@@ -95,6 +95,20 @@ h2 { margin: 0 0 12px; font-size: 13px; font-weight: 700; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; }
 .summary-panel p { color: #c7d1dc; line-height: 1.7; }
 .score-ring { width: 42px; height: 42px; border: 2px solid var(--gold); color: var(--gold); border-radius: 50%; display: grid; place-items: center; font-weight: 800; }
+.signal-overview { margin-top: 14px; }
+.signal-score-row { display: grid; grid-template-columns: 1fr 38px; align-items: center; gap: 10px; }
+.signal-score-row > strong { color: var(--gold); font-size: 20px; text-align: right; }
+.signal-score-track { display: inline-block; width: 100%; height: 8px; overflow: hidden; border-radius: 2px; background: #263442; vertical-align: middle; }
+.signal-score-track i { display: block; width: 0; height: 100%; background: linear-gradient(90deg,#bb7b22,var(--gold)); transition: width .25s ease; }
+.signal-facts,.trade-plan { margin: 14px 0 0; }
+.signal-facts > div,.trade-plan > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgb(38 52 66 / 65%); }
+.signal-facts dt,.trade-plan dt { color: var(--muted); }
+.signal-facts dd,.trade-plan dd { margin: 0; color: #e7edf4; font-weight: 700; text-align: right; }
+.signal-facts dd:has(.signal-score-track) { display: grid; grid-template-columns: minmax(76px,1fr) 30px; align-items: center; gap: 8px; width: 58%; }
+.signal-facts dd strong { color: var(--gold); }
+.signal-divider { height: 1px; margin: 15px 0 5px; background: linear-gradient(90deg,transparent,var(--line),transparent); }
+.trade-plan dd { color: #dfc274; }
+.state-summary { margin: 14px 0 0; font-size: 11px; color: var(--muted) !important; }
 ul { padding-left: 17px; margin: 0; color: #b5c2cf; line-height: 1.65; }
 li + li { margin-top: 5px; }
 .bullish h2 { color: #ff8986; }

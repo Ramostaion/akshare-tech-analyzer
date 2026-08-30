@@ -64,7 +64,7 @@
           <div><dt>涨跌幅</dt><dd id="pct-change">--</dd></div>
           <div><dt>趋势状态</dt><dd id="trend-state">--</dd></div>
           <div><dt>市场状态</dt><dd id="market-regime">--</dd></div>
-          <div><dt>技术评分</dt><dd id="score">--</dd></div>
+          <div><dt>技术状态评分</dt><dd id="score">--</dd></div>
           <div><dt>最近支撑</dt><dd id="support">--</dd></div>
           <div><dt>最近阻力</dt><dd id="resistance">--</dd></div>
           <div><dt>ATR%</dt><dd id="atr-pct">--</dd></div>
@@ -77,8 +77,29 @@
 
       <div class="analysis-grid">
         <section class="summary-panel">
-          <div class="panel-heading"><h2>结论摘要</h2><span id="score-ring" class="score-ring">--</span></div>
-          <p id="summary"></p>
+          <div class="panel-heading"><h2>技术状态</h2></div>
+          <div class="signal-overview">
+            <div class="signal-score-row">
+              <div class="signal-score-track"><i id="technical-score-fill"></i></div>
+              <strong id="score-ring">--</strong>
+            </div>
+            <dl class="signal-facts">
+              <div><dt>当前 Setup</dt><dd id="overview-setup">暂无</dd></div>
+              <div><dt>买点质量</dt><dd><span class="signal-score-track"><i id="signal-score-fill"></i></span><strong id="overview-signal-score">--</strong></dd></div>
+              <div><dt>历史类似信号</dt><dd id="overview-samples">0 次</dd></div>
+              <div><dt>成功率</dt><dd id="overview-win-rate">--</dd></div>
+              <div><dt>Expected R</dt><dd id="overview-expected-r">--</dd></div>
+            </dl>
+            <div class="signal-divider"></div>
+            <dl class="trade-plan">
+              <div><dt>观察买入区</dt><dd id="overview-entry-zone">--</dd></div>
+              <div><dt>失效位</dt><dd id="overview-stop">--</dd></div>
+              <div><dt>第一目标</dt><dd id="overview-target-1">--</dd></div>
+              <div><dt>第二目标</dt><dd id="overview-target-2">--</dd></div>
+              <div><dt>潜在盈亏比</dt><dd id="overview-reward-risk">--</dd></div>
+            </dl>
+          </div>
+          <p id="summary" class="state-summary"></p>
           <div id="scenario" class="scenario hidden"></div>
         </section>
         <section class="evidence-panel bullish"><h2>偏强证据</h2><ul id="bullish-list"></ul></section>
@@ -102,7 +123,35 @@
           <div id="cache-quality" class="quality-summary"></div>
         </section>
       </div>
-      <p class="disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。</p>
+      <div class="insight-grid quant-grid">
+        <section>
+          <h2>量化 Setup 与 Signal</h2>
+          <div id="quant-signal" class="quality-summary"></div>
+        </section>
+        <section>
+          <h2>Entry / Stop / Target</h2>
+          <div id="quant-risk" class="quality-summary"></div>
+        </section>
+        <section>
+          <h2>历史类似信号统计</h2>
+          <div id="quant-history" class="quality-summary"></div>
+        </section>
+        <section>
+          <h2>Wave Candidate</h2>
+          <div id="wave-candidates" class="quality-summary"></div>
+        </section>
+      </div>
+      <div class="insight-grid quant-grid">
+        <section>
+          <h2>Factor Snapshot</h2>
+          <div id="factor-snapshot" class="indicator-list"></div>
+        </section>
+        <section>
+          <h2>可执行回测统计</h2>
+          <div id="quant-backtest" class="quality-summary"></div>
+        </section>
+      </div>
+      <p class="disclaimer">历史统计不代表未来收益，信号仅为算法研究结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。</p>
     </section>
   </main>
   <div id="favorite-context-menu" class="favorite-context-menu hidden" role="menu">

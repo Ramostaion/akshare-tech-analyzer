@@ -32,6 +32,7 @@ def render_report_header(
     request: AnalyzeRequest,
     analysis: dict[str, Any],
     levels: dict[str, Any],
+    quant: dict[str, Any] | None = None,
 ) -> str:
     environment = Environment(
         loader=FileSystemLoader(PROJECT_ROOT / "templates"),
@@ -43,6 +44,7 @@ def render_report_header(
         request=request,
         analysis=analysis,
         levels=levels,
+        quant=quant or {},
         generated_at=datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M:%S %Z"),
     )
 
@@ -53,10 +55,11 @@ def build_report_html(
     request: AnalyzeRequest,
     analysis: dict[str, Any],
     levels: dict[str, Any],
+    quant: dict[str, Any] | None = None,
 ) -> str:
     """生成包含 Plotly、CSS、分析正文的完整离线 HTML。"""
     html = render_figure_html(figure, full_html=True)
-    header = render_report_header(market_data, request, analysis, levels)
+    header = render_report_header(market_data, request, analysis, levels, quant)
     return html.replace("<body>", f"<body>{header}", 1).replace(
         "<head>",
         '<head><meta name="viewport" content="width=device-width,initial-scale=1">',
