@@ -17,7 +17,7 @@
   {% if market.snapshot %}<div class="source">独立快照：最新价 {{ market.snapshot.latest if market.snapshot.latest is not none else "--" }} · 数据时间 {{ market.snapshot.source_timestamp or "未知" }} · 采集时间 {{ market.snapshot.captured_at }}</div>{% endif %}
 </header>
 <div class="report-body">
-  <section><h2>结论摘要</h2><p>{{ analysis.summary }}</p>{% if levels.scenario %}<p>参考情景：观察区间 {{ levels.scenario.observation_lower }}–{{ levels.scenario.observation_upper }}，失效位 {{ levels.scenario.invalidation }}，目标位 {{ levels.scenario.target }}，潜在盈亏比 {{ levels.scenario.reward_risk_ratio }}。{{ levels.scenario.note }}</p>{% endif %}</section>
+  <section><h2>结论摘要</h2><p>{{ analysis.summary }}</p><p>市场状态：{{ analysis.market_regime.label }}。{{ analysis.market_regime.rationale }}</p>{% if levels.scenario %}<p>参考情景：观察区间 {{ levels.scenario.observation_lower }}–{{ levels.scenario.observation_upper }}，失效位 {{ levels.scenario.invalidation }}，目标位 {{ levels.scenario.target }}，潜在盈亏比 {{ levels.scenario.reward_risk_ratio }}。{{ levels.scenario.note }}</p>{% endif %}</section>
   <section><h2 style="color:#ff8986">偏强证据</h2><ul>{% for item in analysis.evidence.bullish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
   <section><h2 style="color:#67d99a">偏弱证据</h2><ul>{% for item in analysis.evidence.bearish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
   <section><h2 style="color:#f2b84b">风险提示</h2><ul>{% for item in analysis.warning %}<li>{{ item }}</li>{% endfor %}{% for item in market.quality_notes %}<li>{{ item }}</li>{% endfor %}</ul></section>
@@ -25,5 +25,9 @@
 <div class="report-extra">
   <section><h2>评分构成</h2><table class="score-table">{% for component in analysis.components.values() %}<tr><td>{{ component.name }}</td><td>{{ component.score }}/100</td></tr>{% endfor %}</table></section>
   <section><h2>指标公式</h2><div class="formula">{% for item in analysis.formula_notes %}<div>{{ item }}</div>{% endfor %}</div></section>
+</div>
+<div class="report-extra">
+  <section><h2>历史信号回测</h2><div class="formula">{{ analysis.backtest.method }}；共{{ analysis.backtest.signals }}次信号；成本{{ analysis.backtest.cost_rate }}%。{% for horizon, result in analysis.backtest.results.items() %}<div>{{ horizon }}根：样本{{ result.all.samples }}，胜率{{ result.all.win_rate if result.all.win_rate is not none else "--" }}%，平均收益{{ result.all.average_return if result.all.average_return is not none else "--" }}%。</div>{% endfor %}</div></section>
+  <section><h2>缓存与数据质量</h2><div class="formula">模式：{{ market.cache_status.mode }}；覆盖：{{ market.cache_status.coverage_start or "--" }} 至 {{ market.cache_status.coverage_end or "--" }}；本次新增{{ market.cache_status.new_rows or 0 }}根。<div>质量：{{ market.data_quality.status }}；有效K线{{ market.data_quality.rows }}根。</div></div></section>
 </div>
 <p class="report-disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。报告生成时间：{{ generated_at }}</p>

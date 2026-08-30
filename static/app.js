@@ -42,7 +42,7 @@ const marketRules = {
   cn_etf: { hint: "示例：510300、510760", value: "510300", pattern: "[0-9]{6}", max: 6, periods: ["daily", "weekly", "monthly", "1m", "5m", "15m", "30m", "60m"], adjustments: ["qfq", "hfq", "none"], defaultAdjust: "qfq" },
   us_stock: { hint: "示例：AAPL、SPCX", value: "AAPL", pattern: "[A-Za-z0-9.-]{1,16}", max: 16, periods: ["daily", "weekly", "monthly", "1m"], adjustments: ["none", "qfq", "hfq"], defaultAdjust: "none" },
   us_index: { hint: "支持：.IXIC、.NDX、.INX、.DJI", value: ".IXIC", pattern: "\\.(IXIC|NDX|INX|DJI)", max: 5, periods: ["daily", "weekly", "monthly"], adjustments: ["none"], defaultAdjust: "none" },
-  global_future: { hint: "支持：GC、SI、HG、CL、NG、OIL、XAU、XAG", value: "GC", pattern: "(GC|SI|HG|CL|NG|OIL|XAU|XAG)", max: 3, periods: ["daily"], adjustments: ["none"], defaultAdjust: "none" },
+  global_future: { hint: "支持：GC、SI、HG、CL、NG、OIL、XAU、XAG", value: "GC", pattern: "(GC|SI|HG|CL|NG|OIL|XAU|XAG)", max: 3, periods: ["daily", "weekly", "monthly"], adjustments: ["none"], defaultAdjust: "none" },
 };
 
 function normalizedAssetType(value) {
@@ -259,6 +259,7 @@ function renderResult(data) {
   if (latest.pct_change > 0) changeNode.classList.add("positive");
   if (latest.pct_change < 0) changeNode.classList.add("negative");
   setText("#trend-state", analysis.state);
+  setText("#market-regime", analysis.market_regime?.label);
   setText("#score", `${analysis.score}/100`);
   setText("#score-ring", analysis.score);
   setText("#support", data.levels.supports[0] ? number(data.levels.supports[0].price, 3) : "未识别");
@@ -280,6 +281,53 @@ function renderResult(data) {
   renderList("#warning-list", analysis.warning);
   renderList("#formula-list", analysis.formula_notes);
   renderList("#quality-list", metadata.quality_notes, "数据规范化检查通过");
+
+  const backtest = analysis.backtest || {};
+  const tenBar = backtest.results?.["10"]?.all;
+  setText(
+    "#backtest-summary",
+    `${backtest.method || "暂无方法"} · 信号${backtest.signals || 0}次 · `
+      + `成本${number(backtest.cost_rate, 2)}% · `
+      + `10根胜率${tenBar?.win_rate == null ? "--" : `${number(tenBar.win_rate)}%`}`,
+  );
+  const backtestResults = document.querySelector("#backtest-results");
+  backtestResults.replaceChildren();
+  Object.entries(backtest.results || {}).forEach(([horizon, sides]) => {
+    const metric = sides.all;
+    const item = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `${horizon}根K线`;
+    const detail = document.createElement("span");
+    detail.textContent = metric.samples
+      ? `样本${metric.samples} · 平均${number(metric.average_return)}% · `
+        + `中位数${number(metric.median_return)}% · 盈亏比${number(metric.payoff_ratio)}`
+      : "有效样本不足";
+    item.append(title, detail);
+    backtestResults.append(item);
+  });
+
+  const cache = metadata.cache_status || {};
+  const quality = metadata.data_quality || {};
+  const cacheLabels = {
+    network: "线上完整获取",
+    exact_cache: "查询缓存命中",
+    series_cache: "历史数据库覆盖",
+    incremental_update: "数据库增量更新",
+    stale_series: "历史数据库降级",
+  };
+  const qualitySummary = document.querySelector("#cache-quality");
+  qualitySummary.replaceChildren();
+  [
+    `缓存模式：${cacheLabels[cache.mode] || cache.mode || "未知"}`,
+    `覆盖区间：${cache.coverage_start || "--"} 至 ${cache.coverage_end || "--"}`,
+    `数据库已有：${cache.existing_rows ?? "--"}根，本次新增：${cache.new_rows ?? 0}根`,
+    `质量状态：${quality.status || "未知"}；有效K线${quality.rows || 0}根`,
+    ...(quality.issues || []),
+  ].forEach((value) => {
+    const row = document.createElement("div");
+    row.textContent = value;
+    qualitySummary.append(row);
+  });
 
   const componentList = document.querySelector("#component-list");
   componentList.replaceChildren();

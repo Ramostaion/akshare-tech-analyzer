@@ -80,8 +80,10 @@ class AnalyzeRequest(BaseModel):
             raise ValueError("单次查询区间不能超过15年")
         if self.asset_type in {"us_index", "global_future"} and self.adjust != "none":
             raise ValueError("美国指数和外盘期货不支持复权，请选择不复权")
-        if self.asset_type == "global_future" and self.period != "daily":
-            raise ValueError("外盘期货连续参考序列仅支持日线")
+        if self.asset_type == "global_future" and self.period not in {
+            "daily", "weekly", "monthly"
+        }:
+            raise ValueError("外盘期货连续参考序列不支持分钟行情")
         if self.asset_type == "us_index" and self.period not in {"daily", "weekly", "monthly"}:
             raise ValueError("美国指数不支持分钟行情")
         if self.asset_type == "us_stock" and self.period not in {
@@ -155,6 +157,39 @@ class MarketData:
     amount_unit: str = "元"
     quality_notes: list[str] | None = None
     snapshot: dict[str, Any] | None = None
+    cache_status: dict[str, Any] | None = None
+
+    def data_quality(self) -> dict[str, Any]:
+        """返回规范化后行情的可审计质量摘要。"""
+        frame = self.frame
+        if frame.empty:
+            return {"status": "异常", "rows": 0, "issues": ["没有有效K线"]}
+        duplicate_rows = int(frame["datetime"].duplicated().sum())
+        invalid_ohlc = int(
+            (
+                (frame["high"] < frame[["open", "close", "low"]].max(axis=1))
+                | (frame["low"] > frame[["open", "close", "high"]].min(axis=1))
+            ).sum()
+        )
+        missing_volume = int(frame["volume"].isna().sum()) if "volume" in frame else len(frame)
+        issues: list[str] = []
+        if duplicate_rows:
+            issues.append(f"存在{duplicate_rows}条重复时间记录")
+        if invalid_ohlc:
+            issues.append(f"存在{invalid_ohlc}条OHLC关系异常记录")
+        if missing_volume:
+            issues.append(f"有{missing_volume}根K线缺少成交量，量能评分保持中性")
+        status = "良好" if not issues else ("注意" if not invalid_ohlc else "异常")
+        return {
+            "status": status,
+            "rows": len(frame),
+            "first_bar": pd.Timestamp(frame["datetime"].iloc[0]).isoformat(),
+            "last_bar": pd.Timestamp(frame["datetime"].iloc[-1]).isoformat(),
+            "duplicate_rows": duplicate_rows,
+            "invalid_ohlc_rows": invalid_ohlc,
+            "missing_volume_rows": missing_volume,
+            "issues": issues,
+        }
 
     def metadata(self) -> dict[str, Any]:
         return {
@@ -168,6 +203,9 @@ class MarketData:
             "quality_notes": self.quality_notes or [],
             "snapshot": self.snapshot,
             "rows": len(self.frame),
+            "cache_status": self.cache_status
+            or {"mode": "exact_cache" if self.from_cache else "network"},
+            "data_quality": self.data_quality(),
         }
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.analysis import analyze_technical_state
+from app.backtest import run_signal_backtest
 from app.cache import SQLiteCache
 from app.charts import create_figure, render_figure_html
 from app.config import Settings, settings
@@ -66,6 +67,7 @@ class AnalyzerService:
         )
         enriched = add_indicators(market_data.frame)
         analysis = analyze_technical_state(enriched)
+        analysis["backtest"] = run_signal_backtest(enriched)
         levels = identify_levels(enriched, self.settings)
         security = market_data.security
         if security.asset_type == "global_future":

@@ -131,6 +131,36 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> 
     )
 
 
+def adx(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+) -> pd.DataFrame:
+    """计算 Wilder ADX 与正负方向指标，只使用当前及更早行情。"""
+    high_values = high.astype(float)
+    low_values = low.astype(float)
+    upward = high_values.diff()
+    downward = -low_values.diff()
+    plus_dm = upward.where((upward > downward) & (upward > 0), 0.0)
+    minus_dm = downward.where((downward > upward) & (downward > 0), 0.0)
+    average_range = atr(high_values, low_values, close, period)
+    plus_di = (
+        100
+        * plus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+        / average_range.replace(0, np.nan)
+    )
+    minus_di = (
+        100
+        * minus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+        / average_range.replace(0, np.nan)
+    )
+    directional_sum = (plus_di + minus_di).replace(0, np.nan)
+    dx = (plus_di - minus_di).abs() / directional_sum * 100
+    adx_values = dx.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    return pd.DataFrame(
+        {"PLUS_DI14": plus_di, "MINUS_DI14": minus_di, "ADX14": adx_values},
+        index=close.index,
+    )
+
+
 def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     """计算能量潮 OBV；首根从0开始，平盘成交量不计入。"""
     direction = np.sign(close.astype(float).diff()).fillna(0)
@@ -158,6 +188,7 @@ def add_indicators(
     result = result.join(bollinger_bands(result["close"]))
     result["ATR14"] = atr(result["high"], result["low"], result["close"], 14)
     result["ATR_PCT"] = result["ATR14"] / result["close"].replace(0, np.nan) * 100
+    result = result.join(adx(result["high"], result["low"], result["close"], 14))
     result["VOL_MA5"] = sma(result["volume"], 5)
     result["VOL_MA10"] = sma(result["volume"], 10)
     prior_volume_average = result["volume"].shift(1).rolling(5, min_periods=5).mean()

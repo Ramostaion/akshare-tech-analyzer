@@ -27,6 +27,13 @@ class ReportRecord:
     created_at: datetime
 
 
+@dataclass(slots=True)
+class HistorySeriesEntry:
+    payload: Any
+    metadata: dict[str, Any]
+    updated_at: datetime
+
+
 class SQLiteCache:
     """线程安全的轻量 SQLite JSON 缓存，不执行任意对象反序列化。"""
 
@@ -66,7 +73,51 @@ class SQLiteCache:
                     request_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS history_series (
+                    series_key TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
+            )
+
+    def get_history_series(self, key: str) -> HistorySeriesEntry | None:
+        """读取不随查询区间拆分的持久历史序列。"""
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM history_series WHERE series_key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        return HistorySeriesEntry(
+            payload=json.loads(row["payload_json"]),
+            metadata=json.loads(row["metadata_json"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    def set_history_series(
+        self, key: str, payload: Any, metadata: dict[str, Any]
+    ) -> None:
+        """原子替换一条已合并、去重的历史序列。"""
+        updated_at = datetime.now(UTC)
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO history_series
+                    (series_key, payload_json, metadata_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(series_key) DO UPDATE SET
+                    payload_json = excluded.payload_json,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    key,
+                    json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+                    updated_at.isoformat(),
+                ),
             )
 
     def get(self, key: str, allow_expired: bool = False) -> CacheEntry | None:

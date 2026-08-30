@@ -63,6 +63,7 @@
           <div><dt>最新价</dt><dd id="latest-price">--</dd></div>
           <div><dt>涨跌幅</dt><dd id="pct-change">--</dd></div>
           <div><dt>趋势状态</dt><dd id="trend-state">--</dd></div>
+          <div><dt>市场状态</dt><dd id="market-regime">--</dd></div>
           <div><dt>技术评分</dt><dd id="score">--</dd></div>
           <div><dt>最近支撑</dt><dd id="support">--</dd></div>
           <div><dt>最近阻力</dt><dd id="resistance">--</dd></div>
@@ -89,6 +90,17 @@
         <section><h2>评分构成</h2><div id="component-list"></div></section>
         <section><h2>指标最新值</h2><div id="indicator-list" class="indicator-list"></div></section>
         <section><h2>公式与数据质量</h2><ul id="formula-list"></ul><ul id="quality-list"></ul></section>
+      </div>
+      <div class="insight-grid">
+        <section>
+          <h2>历史信号回测</h2>
+          <p id="backtest-summary" class="detail-note"></p>
+          <div id="backtest-results" class="backtest-results"></div>
+        </section>
+        <section>
+          <h2>缓存与数据质量</h2>
+          <div id="cache-quality" class="quality-summary"></div>
+        </section>
       </div>
       <p class="disclaimer">仅为算法技术分析结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。</p>
     </section>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -93,6 +94,49 @@ def test_provider_auto_detection_and_cache(tmp_path) -> None:
     assert stock.security.asset_type == "stock"
     assert stock.security.name == "华能国际"
     assert cached.from_cache is True
+
+
+class IncrementalAk(FakeAk):
+    def __init__(self) -> None:
+        self.ranges: list[tuple[str, str]] = []
+
+    def stock_zh_a_hist(
+        self, symbol: str, period: str, start_date: str, end_date: str, adjust: str
+    ) -> pd.DataFrame:
+        self.ranges.append((start_date, end_date))
+        dates = pd.date_range(
+            pd.to_datetime(start_date), pd.to_datetime(end_date), freq="B"
+        )
+        close = pd.Series(np.arange(len(dates)), dtype=float) * 0.1 + 10
+        return pd.DataFrame(
+            {
+                "日期": dates,
+                "开盘": close - 0.05,
+                "收盘": close,
+                "最高": close + 0.1,
+                "最低": close - 0.1,
+                "成交量": 100_000,
+                "成交额": 1_000_000,
+            }
+        )
+
+
+def test_history_cache_fetches_only_missing_date_range(tmp_path) -> None:
+    app_settings = Settings(cache_db=tmp_path / "market.db", report_dir=tmp_path / "reports")
+    ak = IncrementalAk()
+    provider = MarketDataProvider(SQLiteCache(app_settings.cache_db), app_settings, ak)
+
+    provider.get_history(
+        "600011", "stock", "daily", "qfq", date(2026, 8, 3), date(2026, 8, 14)
+    )
+    expanded = provider.get_history(
+        "600011", "stock", "daily", "qfq", date(2026, 8, 3), date(2026, 8, 21)
+    )
+
+    assert ak.ranges == [("20260803", "20260814"), ("20260815", "20260821")]
+    assert expanded.cache_status["mode"] == "incremental_update"
+    assert expanded.cache_status["new_rows"] == 5
+    assert expanded.metadata()["data_quality"]["status"] == "良好"
 
 
 class EmptyAk(FakeAk):

@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from datetime import time as clock_time
 from hashlib import sha256
 from typing import Any
@@ -76,6 +76,15 @@ US_INDEX_NAMES = {
 SUPPORTED_FUTURES = {"GC", "SI", "HG", "CL", "NG", "OIL", "XAU", "XAG"}
 
 logger = get_logger("provider")
+
+
+def _is_valid_us_ticker(symbol: str) -> bool:
+    """Return whether a canonical US ticker is safe to pass to the Sina fallback."""
+    return (
+        1 <= len(symbol) <= 16
+        and symbol[0].isalnum()
+        and all(char.isascii() and (char.isalnum() or char in ".-") for char in symbol)
+    )
 
 
 def normalize_market_frame(raw: pd.DataFrame) -> pd.DataFrame:
@@ -355,8 +364,16 @@ class MarketDataProvider:
     def _us_stock_list(self) -> tuple[dict[str, dict[str, str]], str]:
         """Return a cached ticker-to-provider-symbol mapping from AKShare's US table."""
         cache_key = "security-list:us-stock:stock_us_spot_em"
+        source_key = "eastmoney_us_stock_list"
         if self.cache and (entry := self.cache.get(cache_key)):
             return dict(entry.payload), "akshare_us_stock_list_cache"
+        if not self._source_available(source_key):
+            stale = self.cache.get(cache_key, allow_expired=True) if self.cache else None
+            if stale:
+                return dict(stale.payload), "akshare_us_stock_list_stale_cache"
+            raise ProviderError(
+                "DATA_SOURCE_UNAVAILABLE", "东方财富美股代码表暂时不可用，已切换备用源"
+            )
         with self._us_list_lock:
             if self.cache and (entry := self.cache.get(cache_key)):
                 return dict(entry.payload), "akshare_us_stock_list_cache"
@@ -373,6 +390,7 @@ class MarketDataProvider:
                 stale = self.cache.get(cache_key, allow_expired=True) if self.cache else None
                 if stale:
                     return dict(stale.payload), "akshare_us_stock_list_stale_cache"
+                self._open_source_breaker(source_key, 300)
                 raise
             code_column = next((c for c in ("代码", "code", "symbol") if c in raw), None)
             name_column = next((c for c in ("名称", "name") if c in raw), None)
@@ -434,7 +452,23 @@ class MarketDataProvider:
             return []
         items: list[dict[str, str]] = []
         if asset_type == "us_stock":
-            securities, _ = self._us_stock_list()
+            try:
+                securities, _ = self._us_stock_list()
+            except ProviderError as exc:
+                if not _is_valid_us_ticker(needle):
+                    return []
+                logger.warning(
+                    "us_stock_search_exact_fallback symbol=%s provider_code=%s",
+                    needle,
+                    exc.code,
+                )
+                return [
+                    {
+                        "symbol": needle,
+                        "name": f"{needle}（代码表暂不可用）",
+                        "asset_type": "us_stock",
+                    }
+                ]
             items = [
                 {"symbol": ticker, "name": item["name"], "asset_type": "us_stock"}
                 for ticker, item in securities.items()
@@ -489,7 +523,36 @@ class MarketDataProvider:
         symbol = symbol.strip().upper()
         now = datetime.now(SHANGHAI_TZ)
         if asset_type == "us_stock":
-            securities, method = self._us_stock_list()
+            try:
+                securities, method = self._us_stock_list()
+            except ProviderError as exc:
+                if not _is_valid_us_ticker(symbol):
+                    raise
+                logger.warning(
+                    "us_stock_identify_sina_fallback symbol=%s provider_code=%s",
+                    symbol,
+                    exc.code,
+                )
+                return SecurityInfo(
+                    symbol=symbol,
+                    canonical_symbol=symbol,
+                    provider_symbol=symbol,
+                    name=symbol,
+                    asset_type="us_stock",
+                    detection_method="sina_ticker_fallback",
+                    data_source="AKShare / 新浪财经美股（代码表故障降级）",
+                    source="新浪财经",
+                    updated_at=now,
+                    market_status=self.us_market_status(),
+                    exchange="美国市场",
+                    currency="USD",
+                    timezone="America/New_York",
+                    capabilities={
+                        "periods": ["daily", "weekly", "monthly"],
+                        "adjustments": ["none", "qfq"],
+                        "minute_adjustment": False,
+                    },
+                )
             match = securities.get(symbol)
             if match is None:
                 raise ProviderError("INVALID_SYMBOL", f"美股代码表中未找到 {symbol}")
@@ -555,7 +618,11 @@ class MarketDataProvider:
                 exchange="境外期货市场",
                 currency="USD",
                 timezone="America/New_York",
-                capabilities={"periods": ["daily"], "adjustments": [], "snapshot": True},
+                capabilities={
+                    "periods": ["daily", "weekly", "monthly"],
+                    "adjustments": [],
+                    "snapshot": True,
+                },
                 subtype="commodity_future",
                 series_type="连续参考序列（非具体合约）",
             )
@@ -618,10 +685,23 @@ class MarketDataProvider:
         start: date,
         end: date,
     ) -> str:
+        return self._cache_key_for_symbol(
+            security.asset_type, security.symbol, period, adjust, start, end
+        )
+
+    @staticmethod
+    def _cache_key_for_symbol(
+        asset_type: str,
+        symbol: str,
+        period: Period,
+        adjust: Adjust,
+        start: date,
+        end: date,
+    ) -> str:
         raw = ":".join(
             [
-                security.asset_type,
-                security.symbol,
+                asset_type,
+                symbol,
                 period,
                 adjust,
                 start.isoformat(),
@@ -629,6 +709,13 @@ class MarketDataProvider:
             ]
         )
         return f"market:{sha256(raw.encode()).hexdigest()}"
+
+    @staticmethod
+    def _history_series_key(
+        asset_type: str, symbol: str, period: Period, adjust: Adjust
+    ) -> str:
+        raw = ":".join((asset_type, symbol, period, adjust))
+        return f"history-series:{sha256(raw.encode()).hexdigest()}"
 
     def _fetch_sina_minute_raw(self, symbol: str, period: str) -> pd.DataFrame:
         """Fetch Sina minute bars directly, avoiding AKShare's extra daily-data request."""
@@ -945,6 +1032,8 @@ class MarketDataProvider:
         start: date,
         end: date,
     ) -> pd.DataFrame:
+        if security.detection_method == "sina_ticker_fallback":
+            return self._fetch_us_stock_sina_history(security, period, adjust, start, end)
         if period == "1m":
             function = getattr(self.ak, "stock_us_hist_min_em", None)
             if function is None:
@@ -963,14 +1052,26 @@ class MarketDataProvider:
                 raise ProviderError(
                     "US_STOCK_DATA_UNSUPPORTED", "当前 AKShare 版本不提供美股历史行情"
                 )
-            raw = self._call_supported(
-                function,
-                symbol=security.provider_symbol,
-                period=period,
-                start_date=start.strftime("%Y%m%d"),
-                end_date=end.strftime("%Y%m%d"),
-                adjust="" if adjust == "none" else adjust,
-            )
+            try:
+                raw = self._call_supported(
+                    function,
+                    symbol=security.provider_symbol,
+                    period=period,
+                    start_date=start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"),
+                    adjust="" if adjust == "none" else adjust,
+                )
+            except ProviderError:
+                if adjust == "hfq":
+                    raise
+                logger.warning(
+                    "us_stock_history_fallback_to_sina symbol=%s period=%s",
+                    security.symbol,
+                    period,
+                )
+                return self._fetch_us_stock_sina_history(
+                    security, period, adjust, start, end
+                )
         normalized = normalize_market_frame(raw)
         if normalized.empty:
             raise ProviderError("EMPTY_DATA", "美股数据源未返回所选区间内的行情")
@@ -978,6 +1079,54 @@ class MarketDataProvider:
             normalized,
             currency="USD",
             source="东方财富美股",
+            captured_at=datetime.now(SHANGHAI_TZ),
+        )
+
+    def _fetch_us_stock_sina_history(
+        self,
+        security: SecurityInfo,
+        period: Period,
+        adjust: Adjust,
+        start: date,
+        end: date,
+    ) -> pd.DataFrame:
+        """Fetch US daily bars from Sina without guessing an Eastmoney market prefix."""
+        if period == "1m":
+            raise ProviderError(
+                "MINUTE_DATA_UNSUPPORTED",
+                "美股代码表不可用时，新浪备用源不提供1分钟行情",
+            )
+        if adjust == "hfq":
+            raise ProviderError(
+                "ADJUST_UNSUPPORTED",
+                "美股代码表不可用时，新浪备用源不支持后复权",
+            )
+        function = getattr(self.ak, "stock_us_daily", None)
+        if function is None:
+            raise ProviderError(
+                "US_STOCK_DATA_UNSUPPORTED", "当前 AKShare 版本不提供新浪美股备用行情"
+            )
+        raw = self._call_supported(
+            function,
+            symbol=security.symbol,
+            adjust="" if adjust == "none" else adjust,
+        )
+        normalized = normalize_market_frame(raw)
+        normalized = normalized.loc[
+            normalized["datetime"].dt.date.between(start, end)
+        ].reset_index(drop=True)
+        normalized = self._resample_history(normalized, period)
+        if normalized.empty:
+            raise ProviderError("EMPTY_DATA", "新浪美股备用源未返回所选区间内的行情")
+        security.provider_symbol = security.symbol
+        security.data_source = "AKShare / 新浪财经美股（东方财富故障降级）"
+        security.source = "新浪财经"
+        if security.detection_method != "sina_ticker_fallback":
+            security.detection_method = "eastmoney_code_table_sina_history_fallback"
+        return self._finalize_frame(
+            normalized,
+            currency="USD",
+            source="新浪财经美股",
             captured_at=datetime.now(SHANGHAI_TZ),
         )
 
@@ -1062,6 +1211,7 @@ class MarketDataProvider:
     def _fetch_future_history(
         self,
         security: SecurityInfo,
+        period: Period,
         start: date,
         end: date,
     ) -> tuple[pd.DataFrame, dict[str, Any] | None]:
@@ -1075,6 +1225,7 @@ class MarketDataProvider:
         normalized = normalized.loc[
             normalized["datetime"].dt.date.between(start, end)
         ].reset_index(drop=True)
+        normalized = self._resample_history(normalized, period)
         if normalized.empty:
             raise ProviderError("EMPTY_DATA", "外盘期货数据源未返回所选区间内的行情")
         captured_at = datetime.now(SHANGHAI_TZ)
@@ -1100,7 +1251,7 @@ class MarketDataProvider:
         if security.asset_type == "us_index":
             return self._fetch_us_index_history(security, period, start, end), None
         if security.asset_type == "global_future":
-            return self._fetch_future_history(security, start, end)
+            return self._fetch_future_history(security, period, start, end)
         if period in MINUTE_PERIODS:
             return self._fetch_minute_history(security, period, adjust, start, end), None
 
@@ -1208,6 +1359,137 @@ class MarketDataProvider:
             amount_unit=metadata.get("amount_unit", "元"),
             quality_notes=quality_notes,
             snapshot=metadata.get("snapshot"),
+            cache_status=metadata.get("cache_status"),
+        )
+
+    def _history_from_incremental_cache(
+        self,
+        security: SecurityInfo,
+        period: Period,
+        adjust: Adjust,
+        start: date,
+        end: date,
+    ) -> MarketData | None:
+        """按缺失区间更新持久序列；分钟行情不进入此缓存。"""
+        if not self.cache or period in MINUTE_PERIODS:
+            return None
+        series_key = self._history_series_key(
+            security.asset_type, security.symbol, period, adjust
+        )
+        entry = self.cache.get_history_series(series_key)
+        if entry is None:
+            return None
+        stored = _frame_from_records(entry.payload)
+        metadata = entry.metadata
+        if stored.empty:
+            return None
+        coverage_start = date.fromisoformat(metadata["coverage_start"])
+        coverage_end = date.fromisoformat(metadata["coverage_end"])
+        missing_ranges: list[tuple[date, date]] = []
+        if start < coverage_start:
+            missing_ranges.append((start, coverage_start - timedelta(days=1)))
+        if end > coverage_end:
+            missing_ranges.append((coverage_end + timedelta(days=1), end))
+        age_seconds = (datetime.now(UTC) - entry.updated_at).total_seconds()
+        if not missing_ranges and age_seconds > self.settings.daily_cache_ttl:
+            last_bar = pd.Timestamp(stored["datetime"].iloc[-1]).date()
+            missing_ranges.append((max(start, last_bar - timedelta(days=7)), end))
+
+        fetched_frames: list[pd.DataFrame] = []
+        snapshot = metadata.get("snapshot")
+        try:
+            for missing_start, missing_end in missing_ranges:
+                if missing_start > missing_end:
+                    continue
+                try:
+                    fetched, fetched_snapshot = self._fetch_history(
+                        security, period, adjust, missing_start, missing_end
+                    )
+                except ProviderError as exc:
+                    if exc.code == "EMPTY_DATA":
+                        continue
+                    raise
+                fetched_frames.append(fetched)
+                snapshot = fetched_snapshot or snapshot
+        except ProviderError:
+            requested = stored.loc[
+                stored["datetime"].dt.date.between(start, end)
+            ].reset_index(drop=True)
+            if requested.empty:
+                raise
+            cached = MarketData(
+                frame=requested,
+                security=security,
+                period=period,
+                adjust=adjust,
+                fetched_at=entry.updated_at.astimezone(SHANGHAI_TZ),
+                from_cache=True,
+                volume_unit=metadata.get("volume_unit", "手"),
+                amount_unit=metadata.get("amount_unit", "元"),
+                quality_notes=list(metadata.get("quality_notes", []))
+                + ["增量更新失败，当前展示数据库已有历史区间。"],
+                snapshot=snapshot,
+                cache_status={
+                    "mode": "stale_series",
+                    "existing_rows": len(requested),
+                    "new_rows": 0,
+                },
+            )
+            return cached
+
+        if fetched_frames:
+            old_datetimes = set(stored["datetime"])
+            merged = normalize_market_frame(pd.concat([stored, *fetched_frames], ignore_index=True))
+            new_rows = int((~merged["datetime"].isin(old_datetimes)).sum())
+            coverage_start = min(start, coverage_start)
+            coverage_end = max(end, coverage_end)
+            metadata.update(
+                {
+                    "coverage_start": coverage_start.isoformat(),
+                    "coverage_end": coverage_end.isoformat(),
+                    "snapshot": snapshot,
+                    "data_source": security.data_source,
+                    "provider_symbol": security.provider_symbol,
+                }
+            )
+            self.cache.set_history_series(series_key, _records_from_frame(merged), metadata)
+            stored = merged
+            mode = "incremental_update"
+        else:
+            new_rows = 0
+            mode = "series_cache"
+        requested = stored.loc[stored["datetime"].dt.date.between(start, end)].reset_index(
+            drop=True
+        )
+        if requested.empty:
+            return None
+        if security.asset_type == "global_future" and not fetched_frames:
+            snapshot = self._fetch_future_snapshot(security.symbol) or snapshot
+        notes = list(metadata.get("quality_notes", []))
+        if fetched_frames:
+            notes.append(f"已检查数据库并仅拉取缺失区间，本次新增{new_rows}根K线。")
+        else:
+            notes.append("查询区间已由数据库历史序列完整覆盖，未请求线上历史行情。")
+        return MarketData(
+            frame=requested,
+            security=security,
+            period=period,
+            adjust=adjust,
+            fetched_at=datetime.now(SHANGHAI_TZ) if fetched_frames else entry.updated_at.astimezone(
+                SHANGHAI_TZ
+            ),
+            from_cache=not fetched_frames,
+            volume_unit=metadata.get("volume_unit", "手"),
+            amount_unit=metadata.get("amount_unit", "元"),
+            quality_notes=notes,
+            snapshot=snapshot,
+            cache_status={
+                "mode": mode,
+                "coverage_start": coverage_start.isoformat(),
+                "coverage_end": coverage_end.isoformat(),
+                "existing_rows": len(stored) - new_rows,
+                "new_rows": new_rows,
+            },
         )
 
     def get_history(
@@ -1220,13 +1502,51 @@ class MarketDataProvider:
         end: date,
         force_refresh: bool = False,
     ) -> MarketData:
-        security = self.identify(symbol, asset_type)
+        normalized_symbol = symbol.strip().upper()
+        direct_cache_types = {
+            "cn_stock",
+            "cn_etf",
+            "us_stock",
+            "us_index",
+            "global_future",
+        }
+        if self.cache and not force_refresh and asset_type in direct_cache_types:
+            direct_key = self._cache_key_for_symbol(
+                asset_type, normalized_symbol, period, adjust, start, end
+            )
+            if entry := self.cache.get(direct_key):
+                metadata = entry.metadata
+                cached_security = SecurityInfo(
+                    symbol=normalized_symbol,
+                    name=str(metadata.get("name", normalized_symbol)),
+                    asset_type=metadata.get("asset_type", asset_type),
+                    detection_method=str(metadata.get("detection_method", "history_cache")),
+                    data_source=str(metadata.get("data_source", "SQLite 历史缓存")),
+                    updated_at=entry.created_at.astimezone(SHANGHAI_TZ),
+                )
+                result = self._market_data_from_cache(
+                    entry, cached_security, period, adjust
+                )
+                if result.security.asset_type == "global_future":
+                    result.snapshot = (
+                        self._fetch_future_snapshot(result.security.symbol) or result.snapshot
+                    )
+                return result
+
+        security = self.identify(normalized_symbol, asset_type)
         cache_key = self._cache_key(security, period, adjust, start, end)
         if self.cache and not force_refresh and (entry := self.cache.get(cache_key)):
             result = self._market_data_from_cache(entry, security, period, adjust)
             if security.asset_type == "global_future":
                 result.snapshot = self._fetch_future_snapshot(security.symbol) or result.snapshot
             return result
+
+        if not force_refresh and (
+            incremental := self._history_from_incremental_cache(
+                security, period, adjust, start, end
+            )
+        ):
+            return incremental
 
         try:
             frame, snapshot = self._fetch_history(security, period, adjust, start, end)
@@ -1278,8 +1598,11 @@ class MarketDataProvider:
                     "历史与快照来自不同接口，采集时间可能不一致。",
                 ]
             )
+            if period in {"weekly", "monthly"}:
+                period_label = "周线" if period == "weekly" else "月线"
+                quality_notes.append(f"{period_label}由上游日线在本地聚合生成。")
             if snapshot is None:
-                quality_notes.append("实时快照暂时不可用，本次仅展示历史日线。")
+                quality_notes.append("实时快照暂时不可用，本次仅展示历史行情。")
         elif security.asset_type == "us_stock":
             quality_notes.append("美股成交量单位为股；行情可能延迟，不是交易所级实时推送。")
             if adjust != "none":
@@ -1310,22 +1633,40 @@ class MarketDataProvider:
                 if period in MINUTE_PERIODS
                 else self.settings.daily_cache_ttl
             )
+            cache_metadata = {
+                "name": security.name,
+                "detection_method": security.detection_method,
+                "data_source": security.data_source,
+                "quality_notes": quality_notes,
+                "snapshot": snapshot,
+                "volume_unit": volume_unit,
+                "amount_unit": amount_unit,
+                **security.as_dict(),
+                "cached_at_utc": datetime.now(UTC).isoformat(),
+                "cache_status": {
+                    "mode": "network",
+                    "existing_rows": 0,
+                    "new_rows": len(frame),
+                },
+            }
             self.cache.set(
                 cache_key,
                 _records_from_frame(frame),
                 ttl,
-                {
-                    "name": security.name,
-                    "detection_method": security.detection_method,
-                    "data_source": security.data_source,
-                    "quality_notes": quality_notes,
-                    "snapshot": snapshot,
-                    "volume_unit": volume_unit,
-                    "amount_unit": amount_unit,
-                    **security.as_dict(),
-                    "cached_at_utc": datetime.now(UTC).isoformat(),
-                },
+                cache_metadata,
             )
+            if period not in MINUTE_PERIODS:
+                series_metadata = dict(cache_metadata)
+                series_metadata.update(
+                    {"coverage_start": start.isoformat(), "coverage_end": end.isoformat()}
+                )
+                self.cache.set_history_series(
+                    self._history_series_key(
+                        security.asset_type, security.symbol, period, adjust
+                    ),
+                    _records_from_frame(frame),
+                    series_metadata,
+                )
         return MarketData(
             frame=frame,
             security=security,
@@ -1337,4 +1678,5 @@ class MarketDataProvider:
             amount_unit=amount_unit,
             quality_notes=quality_notes,
             snapshot=snapshot,
+            cache_status={"mode": "network", "existing_rows": 0, "new_rows": len(frame)},
         )

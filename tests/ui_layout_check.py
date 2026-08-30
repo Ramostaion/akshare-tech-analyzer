@@ -37,7 +37,7 @@ def inspect_layout(url: str, output_dir: Path) -> list[dict[str, object]]:
             )
             page.goto(url, wait_until="networkidle")
             page.locator("#symbol").fill("600011")
-            page.locator("#asset-type").select_option("stock")
+            page.locator("#asset-type").select_option("cn_stock")
             page.locator("#start").fill("2024-01-01")
             page.locator("#end").fill("2026-08-29")
             page.locator("#analyze-button").click()

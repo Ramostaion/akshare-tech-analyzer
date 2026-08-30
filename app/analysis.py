@@ -102,6 +102,60 @@ def _confirmed_divergence(frame: pd.DataFrame) -> str | None:
     return None
 
 
+def _market_regime(frame: pd.DataFrame) -> dict[str, Any]:
+    """依据趋势强度和自身波动率分位识别当前市场状态。"""
+    adx_value = _latest(frame, "ADX14")
+    atr_value = _latest(frame, "ATR_PCT")
+    atr_history = frame.get("ATR_PCT", pd.Series(dtype=float)).dropna().tail(120)
+    atr_percentile = None
+    if atr_value is not None and not atr_history.empty:
+        atr_percentile = float((atr_history <= atr_value).mean() * 100)
+    ma20_slope = _slope(frame["MA20"], 5) if "MA20" in frame else None
+    close = _latest(frame, "close")
+    ma60 = _latest(frame, "MA60")
+
+    key = "range"
+    label = "区间震荡"
+    rationale = "趋势强度有限，动量指标权重提高。"
+    weights = {"trend": 0.25, "momentum": 0.40, "volume": 0.15, "risk": 0.20}
+    if atr_percentile is not None and atr_percentile >= 80:
+        key, label = "high_volatility", "高波动"
+        rationale = "ATR%处于近120根K线高分位，风险权重提高。"
+        weights = {"trend": 0.30, "momentum": 0.20, "volume": 0.10, "risk": 0.40}
+    elif (
+        atr_percentile is not None
+        and atr_percentile <= 20
+        and (adx_value is None or adx_value < 22)
+    ):
+        key, label = "low_volatility", "低波动蓄势"
+        rationale = "波动率处于低分位且趋势尚未增强，量能确认权重提高。"
+        weights = {"trend": 0.25, "momentum": 0.30, "volume": 0.25, "risk": 0.20}
+    elif (
+        adx_value is not None
+        and adx_value >= 23
+        and ma20_slope is not None
+        and close is not None
+        and ma60 is not None
+    ):
+        if ma20_slope > 0 and close > ma60:
+            key, label = "uptrend", "上升趋势"
+            rationale = "ADX确认趋势强度，价格位于MA60上方且MA20斜率向上。"
+        elif ma20_slope < 0 and close < ma60:
+            key, label = "downtrend", "下降趋势"
+            rationale = "ADX确认趋势强度，价格位于MA60下方且MA20斜率向下。"
+        if key in {"uptrend", "downtrend"}:
+            weights = {"trend": 0.50, "momentum": 0.25, "volume": 0.10, "risk": 0.15}
+
+    return {
+        "key": key,
+        "label": label,
+        "adx14": round(adx_value, 2) if adx_value is not None else None,
+        "atr_percentile": round(atr_percentile, 1) if atr_percentile is not None else None,
+        "rationale": rationale,
+        "weights": weights,
+    }
+
+
 def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
     """综合趋势、动量、量能和波动风险，输出0至100的结构化评分。"""
     if frame.empty or "close" not in frame:
@@ -113,6 +167,12 @@ def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
             "components": {},
             "summary": "数据不足，暂不形成技术结论。",
             "latest": {},
+            "market_regime": {
+                "key": "insufficient",
+                "label": "数据不足",
+                "rationale": "没有足够行情识别市场状态。",
+                "weights": {},
+            },
         }
 
     evidence: dict[str, list[str]] = {"bullish": [], "bearish": [], "neutral": []}
@@ -252,12 +312,9 @@ def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
 
     for component in components.values():
         component["score"] = round(float(np.clip(component["score"], 0, 100)), 1)
-    total = round(
-        components["trend"]["score"] * 0.4
-        + components["momentum"]["score"] * 0.3
-        + components["volume"]["score"] * 0.15
-        + components["risk"]["score"] * 0.15
-    )
+    market_regime = _market_regime(frame)
+    weights = market_regime["weights"]
+    total = round(sum(components[key]["score"] * weights[key] for key in components))
     total = int(np.clip(total, 0, 100))
     if len(frame) < 20:
         state = "数据不足"
@@ -298,6 +355,9 @@ def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
         "BOLL_LOWER",
         "ATR14",
         "ATR_PCT",
+        "ADX14",
+        "PLUS_DI14",
+        "MINUS_DI14",
         "VOL_MA5",
         "VOL_MA10",
         "VOL_RATIO",
@@ -305,7 +365,7 @@ def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
     ]
     latest = {column: _latest(frame, column) for column in latest_columns}
     summary = (
-        f"当前技术状态为{state}，综合评分{total}/100。"
+        f"当前市场状态为{market_regime['label']}，技术方向为{state}，综合评分{total}/100。"
         f"趋势{components['trend']['score']:.0f}、动量{components['momentum']['score']:.0f}、"
         f"量能{components['volume']['score']:.0f}、波动/风险{components['risk']['score']:.0f}。"
     )
@@ -317,10 +377,12 @@ def analyze_technical_state(frame: pd.DataFrame) -> dict[str, Any]:
         "components": components,
         "summary": summary,
         "latest": latest,
+        "market_regime": market_regime,
         "formula_notes": [
             "MACD柱=2×(DIF-DEA)，DIF=EMA12-EMA26，DEA为DIF的9周期EMA。",
             "BOLL使用20周期样本标准差(ddof=1)，上下轨=MID±2σ。",
             "RSI与ATR使用Wilder平滑(alpha=1/周期)。",
             "量比=当前成交量/此前5根K线平均成交量。",
+            "ADX14用于识别趋势强度；评分权重随趋势、震荡和波动状态动态调整。",
         ],
     }

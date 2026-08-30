@@ -81,7 +81,13 @@ async def provider_exception_handler(request: Request, exc: ProviderError) -> JS
         request.url.path,
         exc.detail,
     )
-    client_errors = {"EMPTY_DATA", "INVALID_DATA", "INVALID_SYMBOL", "MINUTE_DATA_UNSUPPORTED"}
+    client_errors = {
+        "ADJUST_UNSUPPORTED",
+        "EMPTY_DATA",
+        "INVALID_DATA",
+        "INVALID_SYMBOL",
+        "MINUTE_DATA_UNSUPPORTED",
+    }
     status = 400 if exc.code in client_errors else 503
     return JSONResponse(
         status_code=status, content=error_payload(exc.code, exc.message, exc.detail)
