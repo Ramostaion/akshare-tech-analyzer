@@ -1,19 +1,52 @@
+# Python 环境与缓存
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.pyright/
+*.egg-info/
+dist/
+build/
+
+# 本地环境配置；示例文件必须保留
 .env
+.env.*
+!.env.example
+
+# 运行数据库与日志，即使通过环境变量改到其他项目内路径也不提交
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# 默认本地运行目录
 cache/*
 !cache/.gitkeep
 reports/*
 !reports/.gitkeep
 logs/*
 !logs/.gitkeep
+
+# Docker / NAS 持久化目录
 data/cache/*
 data/reports/*
 data/logs/*
 !data/logs/.gitkeep
-*.egg-info/
-dist/
-build/
+
+# 覆盖率与浏览器测试产物
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+test-results/
+playwright-report/
+blob-report/
+
+# 可选研究工具缓存
+.ipynb_checkpoints/

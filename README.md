@@ -155,7 +155,7 @@ Indicator → Factor → Market Regime → Setup → Signal
 - `execution.py` 处理下一根成交、手续费、滑点、T+1 和不可成交数据状态；当前 OHLCV 无法可靠区分所有涨跌停成交状态，因此保留明确 warning，不伪造成交规则。
 - `backtest.py` 生成完整 `TradeRecord`，`metrics.py` 计算 Expectancy、Profit Factor、回撤、累计/年化收益、Sharpe、MFE 和 MAE，并按 Regime 分组。
 - `research.py` 提供 Factor 分桶、训练集参数扫描、连续时间切分和基础 Walk Forward；禁止随机 shuffle，也不把全历史最优参数直接当作生产参数。
-- `wave/` 使用右侧确认 Swing、ATR ZigZag 和硬规则输出 Top-N 候选，Fib 只参与评分。
+- `wave/` 使用右侧确认 Swing、ATR ZigZag 和硬规则输出 Top-N 候选，Fib 只参与评分。K 线图仅连接置信度最高候选的已确认 Pivot，并以两条示意路径分别展示“延续至目标区”和“触及失效位后重新计浪”；路径横轴不预测到达时间。
 
 现有 0～100 分已明确命名为 `Market / Technical State Score`，继续用于描述市场技术状态；`Signal Quality Score` 与历史胜率、Expected R 分开展示，85 分绝不表示 85% 上涨概率。
 

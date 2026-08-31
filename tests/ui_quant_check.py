@@ -10,6 +10,15 @@ from playwright.sync_api import Route, sync_playwright
 
 def _payload() -> dict[str, object]:
     return {
+        "request": {
+            "symbol": "600011",
+            "asset_type": "cn_stock",
+            "period": "daily",
+            "adjust": "qfq",
+            "start": "2024-01-01",
+            "end": "2026-08-30",
+            "show_kdj": False,
+        },
         "metadata": {
             "security": {
                 "symbol": "600011",
@@ -95,12 +104,15 @@ def _payload() -> dict[str, object]:
                         "pattern": "unfinished_impulse",
                         "current_wave": 5,
                         "confidence": 0.72,
-                        "projection": {"primary_zone": [13.4, 13.8]},
+                        "projection": {"primary_zone": [13.4, 13.8], "invalidation": 11.9},
                     }
                 ]
             },
         },
-        "chart_html": '<div class="plotly-graph-div" style="height:420px"></div>',
+        "chart_html": (
+            '<div class="plotly-graph-div" style="height:420px"></div>'
+            "<script>document.currentScript.previousElementSibling._fullLayout = {};</script>"
+        ),
         "download_url": "/api/report/offline/download",
     }
 
@@ -131,6 +143,33 @@ def main() -> None:
             page.locator("#quant-signal").get_by_text("UPTREND", exact=False).wait_for()
             assert page.locator("#overview-setup").inner_text() == "趋势回踩确认"
             assert "¥12.18" in page.locator("#overview-entry-zone").inner_text()
+            wave_text = page.locator("#wave-candidates").inner_text()
+            assert "情景A目标区13.4–13.8" in wave_text
+            assert "情景B失效位11.900" in wave_text
+            assert not page.locator(".factor-details").get_attribute("open")
+            page.evaluate(
+                """() => {
+                  const graph = document.querySelector("#chart .plotly-graph-div");
+                  graph.layout = {
+                    xaxis: {range: ["2025-01-01", "2025-06-30"], autorange: false},
+                    yaxis: {autorange: true}
+                  };
+                  window.Plotly = {
+                    relayout: async (nextGraph, view) => { nextGraph.__restoredView = view; },
+                    Plots: {resize: () => {}}
+                  };
+                }"""
+            )
+            page.evaluate("runAnalysis(true)")
+            page.wait_for_function(
+                "document.querySelector('#chart .plotly-graph-div').__restoredView"
+            )
+            restored_view = page.evaluate(
+                "document.querySelector('#chart .plotly-graph-div').__restoredView"
+            )
+            assert restored_view["xaxis.range"] == ["2025-01-01", "2025-06-30"]
+            assert restored_view["xaxis.autorange"] is False
+            assert "yaxis.range" not in restored_view
             overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
             assert not overflow, f"{name} 存在横向溢出"
             assert not errors, f"{name} 控制台错误: {errors}"

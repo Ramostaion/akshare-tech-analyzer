@@ -98,6 +98,7 @@ def test_health_home_and_security(tmp_path, market_frame) -> None:
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
     assert "技术分析工作台" in home.text
+    assert '<details class="factor-details">' in home.text
     assert security.json()["security"]["name"] == "测试证券"
 
 

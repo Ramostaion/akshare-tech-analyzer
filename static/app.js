@@ -19,6 +19,7 @@ let chartResizeFrame = null;
 let suggestionTimer = null;
 let currentInstrument = null;
 let contextFavorite = null;
+let renderedChartContext = null;
 
 const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
 const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
@@ -326,7 +327,9 @@ function renderQuant(quant, security) {
   const wave = quant?.wave || {};
   renderRows("#wave-candidates", (wave.candidates || []).map((candidate, index) => (
     `候选${index + 1}：${candidate.pattern} · 当前浪${candidate.current_wave} · `
-      + `置信度${number(candidate.confidence * 100, 1)}% · 目标区${(candidate.projection?.primary_zone || []).join("–")}`
+      + `置信度${number(candidate.confidence * 100, 1)}% · `
+      + `情景A目标区${(candidate.projection?.primary_zone || []).join("–")} · `
+      + `情景B失效位${number(candidate.projection?.invalidation, 3)}`
   )));
   const factorTarget = document.querySelector("#factor-snapshot");
   factorTarget.replaceChildren();
@@ -348,7 +351,48 @@ function renderQuant(quant, security) {
   ]);
 }
 
-function renderResult(data) {
+function captureChartView(graph) {
+  if (!graph?.layout) return null;
+  const view = {};
+  Object.entries(graph.layout).forEach(([axisName, axis]) => {
+    if (!/^[xy]axis\d*$/.test(axisName)) return;
+    if (!Array.isArray(axis?.range) || axis.range.length !== 2 || axis.autorange === true) return;
+    view[`${axisName}.range`] = [...axis.range];
+    view[`${axisName}.autorange`] = false;
+  });
+  return Object.keys(view).length ? view : null;
+}
+
+function restoreChartView(graph, view) {
+  if (!graph || !view) return;
+  let attempts = 0;
+  const applyView = () => {
+    attempts += 1;
+    if (!window.Plotly || !graph._fullLayout) {
+      if (attempts < 60) requestAnimationFrame(applyView);
+      return;
+    }
+    window.Plotly.relayout(graph, view).then(() => window.Plotly.Plots.resize(graph));
+  };
+  requestAnimationFrame(applyView);
+}
+
+function chartContext(data) {
+  const request = data.request || {};
+  const metadata = data.metadata || {};
+  const security = metadata.security || {};
+  return JSON.stringify([
+    security.symbol,
+    security.asset_type,
+    metadata.period,
+    metadata.adjust,
+    request.start,
+    request.end,
+    request.show_kdj,
+  ]);
+}
+
+function renderResult(data, preserveChartView = false) {
   const metadata = data.metadata;
   const security = metadata.security;
   const analysis = data.analysis;
@@ -485,6 +529,11 @@ function renderResult(data) {
   }
 
   const chart = document.querySelector("#chart");
+  const previousGraph = chart.querySelector(".plotly-graph-div");
+  const nextChartContext = chartContext(data);
+  const savedChartView = preserveChartView && renderedChartContext === nextChartContext
+    ? captureChartView(previousGraph)
+    : null;
   // Plotly 初始化时必须能测量到真实容器宽度，否则会回退到 700px。
   result.classList.remove("hidden");
   chart.innerHTML = data.chart_html;
@@ -494,6 +543,7 @@ function renderResult(data) {
     script.textContent = oldScript.textContent;
     oldScript.replaceWith(script);
   });
+  renderedChartContext = nextChartContext;
   const graph = chart.querySelector(".plotly-graph-div");
   if (graph && window.Plotly) {
     const resizeChart = () => {
@@ -504,6 +554,7 @@ function renderResult(data) {
     chartResizeObserver = new ResizeObserver(resizeChart);
     chartResizeObserver.observe(chart);
     requestAnimationFrame(() => requestAnimationFrame(resizeChart));
+    restoreChartView(graph, savedChartView);
   }
   downloadButton.href = data.download_url;
   downloadButton.classList.remove("disabled");
@@ -538,7 +589,7 @@ async function runAnalysis(forceRefresh = false) {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message || "分析请求失败");
-    renderResult(data);
+    renderResult(data, forceRefresh);
     showMessage(`分析完成：${data.metadata.security.symbol} ${data.metadata.security.name}`);
   } catch (error) {
     showMessage(error.message || "数据源异常，请稍后重试", true);

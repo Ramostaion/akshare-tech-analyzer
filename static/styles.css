@@ -124,6 +124,12 @@ li + li { margin-top: 5px; }
 .indicator-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); }
 .indicator-list div { display: flex; justify-content: space-between; background: #0b121a; padding: 7px; gap: 6px; font-size: 11px; }
 .indicator-list span { color: var(--muted); }
+.factor-details summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #edf4fb; font-size: 14px; font-weight: 600; list-style: none; }
+.factor-details summary::-webkit-details-marker { display: none; }
+.factor-details summary::before { content: "▸"; color: var(--accent); transition: transform 0.16s ease; }
+.factor-details[open] summary::before { transform: rotate(90deg); }
+.factor-details summary span { color: var(--muted); font-size: 10px; font-weight: 400; }
+.factor-details .indicator-list { margin-top: 12px; }
 .insight-grid { display: grid; grid-template-columns: 1.6fr 1fr; border: 1px solid var(--line); border-top: 0; }
 .insight-grid > section { padding: 16px; min-width: 0; }
 .insight-grid > section + section { border-left: 1px solid var(--line); }

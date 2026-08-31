@@ -20,7 +20,7 @@ Use the project virtual environment on Windows:
 docker compose up -d --build   # containerized local/NAS deployment
 ```
 
-UI scripts are manual checks requiring a service or report.
+UI scripts are manual checks requiring a service or report. Run `tests\ui_quant_check.py` after changing quant panels, Plotly replacement, auto-refresh, or responsive behavior.
 
 ## Coding Style & Naming Conventions
 
@@ -33,6 +33,10 @@ Name pytest files `test_*.py` and tests `test_<behavior>`. Automated tests must 
 ## Multi-Market Compatibility
 
 Preserve legacy `auto|stock|etf` request behavior. Never guess US provider prefixes; resolve naked tickers through the AKShare code table. Never describe a global-futures continuous reference series as a specific contract. Reject unsupported periods or adjustments with stable, readable errors. Missing volume must remain neutral in scoring. Preserve China red-up/green-down and overseas green-up/red-down chart conventions.
+
+## Signal & Chart Presentation
+
+Treat Setup, close-confirmed Trigger, next-bar execution, and completed TradeRecord as separate events. Yellow buy markers belong on the Trigger confirmation bar, must exclude exit signals, and must not be described as executed prices. If repeated Trigger bars are deduplicated or given a cooldown, document the policy and add no-future tests. Plot only the Top-1 wave candidate on the K-line chart, connect confirmed pivots, and label unfinished waves without presenting an unconfirmed endpoint as final. Wave continuation and invalidation paths are scenarios, not time forecasts; their horizontal span must remain explicitly illustrative. Auto-refresh must preserve a manually zoomed Plotly view only when symbol, market, period, date range, and chart context are unchanged; a manual analysis or changed context may reset the view. Keep Factor Snapshot available for audit but collapsed by default in the workbench.
 
 ## Commit & Pull Request Guidelines
 

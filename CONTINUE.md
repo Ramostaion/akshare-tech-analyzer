@@ -1,13 +1,13 @@
 # 项目继续开发记录
 
-更新日期：2026-08-30（Asia/Shanghai）
+更新日期：2026-08-31（Asia/Shanghai）
 
 ## 当前状态
 
 - 项目版本：`0.3.0`
-- 项目路径：`C:\Users\Elaina\Desktop\stock\akshare-tech-analyzer`
+- 项目路径：`C:\Users\MattLiu\Desktop\工具包\akshare-tech-analyzer`
 - “可解释、可回测、可统计验证的量化技术信号研究平台”第一版增量改造已经完成。
-- 临时验证服务均已停止；正常启动端口仍为 `8000`。
+- 正常启动端口为 `8000`；本轮检查时该端口已有服务响应，因此未重复启动服务。
 - Git 元数据可用；工作树包含本次 `0.3.0` 量化升级改动，尚未提交。
 
 ## 已完成内容
@@ -27,6 +27,7 @@
 - pandas/NumPy 指标、确定性趋势评分、支撑阻力聚类和 Plotly 多子图。
 - Windows 自动环境启动脚本、Linux 启动脚本、Dockerfile 和 Compose 配置。
 - Plotly 默认平移、绘图形状及 `Ctrl+Z` 撤销；桌面和移动端图表宽度问题已修复。
+- `.gitignore` 已覆盖环境变体、SQLite 旁路文件、日志、覆盖率和 Playwright 产物；新增 `.dockerignore`，排除虚拟环境、Git 元数据、测试及运行数据，保留镜像构建必需源码。
 
 ### 数据源与多市场
 
@@ -44,39 +45,48 @@
 - 左键点击收藏项切换品种，悬停显示中文名称与市场。
 - 右键收藏项显示自定义“取消收藏”菜单；点击空白、滚动、缩放、失焦或按 `Esc` 会关闭菜单。
 - 首次使用显示“暂无收藏”，单个浏览器最多保存 30 项。
-- `AGENTS.md` 已更新为当前多市场架构、测试边界和手动 UI 检查规则。
+- K 线图新增黄色上三角“历史买入 Trigger”：只标收盘确认的做多 Trigger，不标趋势破位退出；悬停显示日期、Setup、规则质量分、收盘参考价及下一根执行提示。
+- 波浪图新增 Top-1 候选连线：只连接已确认 Pivot，推动浪标注 `0～5`，ABC 标注起点与 `A～C`；悬停显示右侧确认滞后。
+- 波浪图新增两条非时间预测情景：情景 A 延续至 Fib 目标区，情景 B 触及失效位后重新计浪；绿色目标区域与横轴示意声明已加入。
+- Factor Snapshot 作为审计用高级数据保留，并在工作台默认折叠；API 与离线报告内容不变。
+- 自动刷新会在相同证券、市场、周期、日期范围和图表上下文下保存并恢复用户手动缩放；手动分析或上下文变化不会复用旧范围。
+- `AGENTS.md` 已更新信号标记、浪形情景、自动刷新视图保持和 UI 检查约束。
 
 ## 已执行验证
 
 - `ruff check .`：通过。
-- `pytest -q`：`89 passed`，仅有一条第三方 `StarletteDeprecationWarning`。
+- `pytest -q`：`92 passed`，仅有一条第三方 `StarletteDeprecationWarning`。
 - FastAPI 导入、`/health`、首页和静态资源：通过。
 - Playwright + 本机 Edge：1440px 桌面及 390px 移动端无重叠、无横向溢出、无控制台错误。
 - 收藏浏览器验证：空列表、添加、刷新持久化、中文 tooltip、右键菜单和取消收藏均通过。
-- 量化 UI 离线 Playwright：1440px 与 390px 均无横向溢出或控制台错误。
+- 量化 UI 离线 Playwright：1440px 与 390px 均无横向溢出或控制台错误；已覆盖 Factor 默认折叠、波浪双情景文案和自动刷新缩放恢复。
 - 真实数据成功：`.IXIC`、`.NDX`、`.INX`、`GC`、`SI`、`CL`；期货快照成功。
 - `docker compose config --quiet`：通过。
 
 ## 已知问题与外部限制
 
 1. `AAPL`、`SPCX` 的真实验证未完成。本机代理访问 `72.push2.eastmoney.com` 时被远端断开；离线 mock 测试正常。不要把该代理错误判断为代码已失败或已成功。
-2. 本机安装了 Docker CLI 和 Compose，但 Docker daemon 未启动，因此镜像尚未完成实际构建验证。
-3. FastAPI TestClient 产生第三方 Starlette/httpx 弃用警告，不影响当前 51 项测试结果；升级相关依赖前需确认兼容性。
+2. 本轮当前终端未找到 `docker` 命令，可能未安装或未加入 PATH；此前只完成过 Compose 配置检查，镜像仍未完成实际构建验证。
+3. FastAPI TestClient 产生第三方 Starlette/httpx 弃用警告，不影响当前 92 项测试结果；升级相关依赖前需确认兼容性。
 4. AKShare 上游可能发生限流、代理干扰或字段变化。自动化 pytest 必须继续使用 mock，真实网络只作为单独冒烟测试。
 5. 收藏保存在当前浏览器和站点源的 `localStorage`，不会跨浏览器、主机或无痕会话同步。
+6. GC 连续参考序列当前没有可靠成交量，`volume_ratio_20` 等因子为 `NaN`。缺失量能在评分中保持中性，但现有 Setup 门槛会使 Trend Pullback 的缩量条件和 Breakout 的放量 Trigger 无法通过，GC 做多 Trigger 因此集中在 Support Reversal；调整前必须明确缺失量能的中性门槛并补多市场测试。
+7. 当前每一根满足 Trigger 的 K 线都会生成独立 TradingSignal，没有按同一 Setup 生命周期去重或设置冷却期。GC 2026 年 8 月有 6 次 Support Reversal Trigger（8月5、7、10、19、21、24日），属于同一月份内多次收盘确认，不应直接解释为六次彼此独立的交易机会。
 
 ## 下一步计划
 
-1. 由用户在常用浏览器中验收星标收藏、悬停名称和右键取消操作。
-2. 调整 VPN/代理直连策略后，重新真实验证 `stock_us_spot_em()`、`AAPL` 和 `SPCX`，并生成美股离线报告。
-3. 启动 Docker Desktop/daemon 后执行 `docker build` 和 `docker compose up`，再检查容器 `/health`。
-4. 为收藏交互增加不依赖行情网络的自动 Playwright 测试，覆盖损坏的 localStorage 数据和 30 项上限。
-5. 若继续扩展市场，先更新 `models.py` 能力校验和 provider mock，再接入路由、图表与报告。
+1. 决定重复 Trigger 策略：建议同一 Setup 激活期间只记录首次 Trigger，待 Setup 失效后才允许重新触发；同时明确图表标记、回测订单和历史类似统计是否使用同一去重口径。
+2. 设计缺失成交量的 Setup 中性规则，重点覆盖 `global_future`：不能把 `NaN` 当成放量确认，也不应无提示地永久封锁不依赖量能也可成立的结构。
+3. 由用户在常用浏览器中验收黄色 Trigger、浪形连线/双情景、Factor 折叠、自动刷新缩放保持，以及原有收藏交互。
+4. 调整 VPN/代理直连策略后，重新真实验证 `stock_us_spot_em()`、`AAPL` 和 `SPCX`，并生成美股离线报告。
+5. 启动 Docker Desktop/daemon 后执行 `docker build` 和 `docker compose up`，再检查容器 `/health`。
+6. 为收藏交互增加不依赖行情网络的自动 Playwright 测试，覆盖损坏的 localStorage 数据和 30 项上限。
+7. 若继续扩展市场，先更新 `models.py` 能力校验和 provider mock，再接入路由、图表与报告。
 
 ## 继续工作命令
 
 ```powershell
-cd C:\Users\Elaina\Desktop\stock\akshare-tech-analyzer
+cd C:\Users\MattLiu\Desktop\工具包\akshare-tech-analyzer
 .\启动平台.bat --check
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m pytest -q
@@ -87,6 +97,7 @@ cd C:\Users\Elaina\Desktop\stock\akshare-tech-analyzer
 
 ```powershell
 .\.venv\Scripts\python.exe tests\ui_layout_check.py --url http://127.0.0.1:8000
+.\.venv\Scripts\python.exe tests\ui_quant_check.py --url http://127.0.0.1:8000
 ```
 
 所有结论仍须显示：仅为算法技术分析结果，不构成投资建议。
