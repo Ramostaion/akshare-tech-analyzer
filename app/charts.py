@@ -22,6 +22,8 @@ BUY_TRIGGER_COLOR = "#facc15"
 WAVE_COLOR = "#22d3ee"
 WAVE_CONTINUATION_COLOR = "#a3e635"
 WAVE_INVALIDATION_COLOR = "#fb7185"
+WAVE_CONFIRMATION_COLOR = "#fbbf24"
+WAVE_NEUTRAL_COLOR = "#94a3b8"
 
 SETUP_LABELS = {
     "trend_pullback": "趋势回踩",
@@ -33,6 +35,7 @@ WAVE_PATTERN_LABELS = {
     "impulse": "推动五浪",
     "unfinished_impulse": "未完成推动浪",
     "abc_zigzag": "ABC锯齿调整",
+    "unfinished_abc": "未完成ABC调整",
 }
 
 PLOTLY_UNDO_POST_SCRIPT = r"""
@@ -260,7 +263,7 @@ def _add_buy_signal_markers(
 def _wave_point_labels(pattern: str, point_count: int) -> list[str]:
     labels = (
         ["起点", "A", "B", "C"]
-        if pattern == "abc_zigzag"
+        if pattern in {"abc_zigzag", "unfinished_abc"}
         else ["0", "1", "2", "3", "4", "5"]
     )
     return labels[:point_count]
@@ -284,7 +287,11 @@ def _add_wave_overlay(figure: go.Figure, wave: dict[str, Any]) -> None:
     text_positions = [
         "bottom center" if item.get("kind") == "low" else "top center" for item in pivots
     ]
-    confidence = float(candidate.get("confidence", 0)) * 100
+    structural_fit = float(
+        candidate.get("structural_fit", candidate.get("confidence", 0))
+    ) * 100
+    scale = str(candidate.get("scale", "标准尺度"))
+    status = "进行中" if candidate.get("status") == "developing" else "已完成"
     hover_text = []
     for label, pivot in zip(point_labels, pivots, strict=True):
         confirmation_lag = int(pivot["confirmation_position"]) - int(pivot["position"])
@@ -292,7 +299,8 @@ def _add_wave_overlay(figure: go.Figure, wave: dict[str, Any]) -> None:
         timestamp = pd.Timestamp(pivot["timestamp"])
         hover_text.append(
             f"{pattern_label} · {wave_name}<br>日期：{timestamp:%Y-%m-%d %H:%M}"
-            f"<br>价格：{float(pivot['price']):.3f}<br>候选置信度：{confidence:.1f}%"
+            f"<br>价格：{float(pivot['price']):.3f}<br>结构匹配度：{structural_fit:.1f}/100"
+            f"（非概率）<br>状态：{status} · {scale}"
             f"<br>右侧确认滞后：{confirmation_lag}根 K 线"
         )
     figure.add_trace(
@@ -327,9 +335,11 @@ def _add_wave_scenarios(
     candidates = wave.get("candidates", [])
     if not candidates or frame.empty:
         return
-    projection = candidates[0].get("projection", {})
+    candidate = candidates[0]
+    projection = candidate.get("projection", {})
     target_zone = projection.get("primary_zone", [])
     invalidation = projection.get("invalidation")
+    confirmation = projection.get("confirmation")
     if len(target_zone) != 2 or invalidation is None:
         return
 
@@ -347,42 +357,186 @@ def _add_wave_scenarios(
     target_midpoint = (zone_lower + zone_upper) / 2
     current_price = float(frame["close"].iloc[-1])
     invalidation_price = float(invalidation)
+    confirmation_price = float(confirmation) if confirmation is not None else None
     common_x = [current_time, future_time]
+    target_label = str(projection.get("target_label", "条件目标观察区"))
+    invalidation_label = str(projection.get("invalidation_label", "候选失效位"))
+    invalidation_rule = str(
+        projection.get("invalidation_rule", "触及该位置后撤销候选并重新计浪")
+    )
+    confirmation_label = str(projection.get("confirmation_label", "路径确认位"))
+    confirmation_rule = str(
+        projection.get("confirmation_rule", "满足确认条件后再观察目标区")
+    )
+
+    path_is_up = projection.get("path_direction") == "up"
+    if projection.get("path_direction") not in {"up", "down"}:
+        path_is_up = target_midpoint >= current_price
+    zone_entry = zone_lower if path_is_up else zone_upper
+    confirmation_pending = confirmation_price is not None and (
+        confirmation_price > current_price if path_is_up else confirmation_price < current_price
+    )
+    if confirmation_pending:
+        path_1_x = [
+            current_time,
+            current_time + interval * 3,
+            current_time + interval * 6,
+            future_time,
+        ]
+        path_1_y = [current_price, confirmation_price, zone_entry, target_midpoint]
+        failed_probe = confirmation_price
+    else:
+        path_1_x = [current_time, current_time + interval * 5, future_time]
+        path_1_y = [current_price, zone_entry, target_midpoint]
+        failed_probe = current_price + (zone_entry - current_price) * 0.35
+    path_2_x = [current_time, current_time + interval * 3, current_time + interval * 7]
+    path_2_y = [current_price, failed_probe, invalidation_price]
+
+    atr_value = frame["ATR14"].iloc[-1] if "ATR14" in frame else None
+    if pd.notna(atr_value) and float(atr_value) > 0:
+        atr_value = float(atr_value)
+        widths = [
+            atr_value * (0.1 + 0.65 * index / max(1, len(path_1_y) - 1))
+            for index in range(len(path_1_y))
+        ]
+        corridor_lower = [value - width for value, width in zip(path_1_y, widths, strict=True)]
+        corridor_upper = [value + width for value, width in zip(path_1_y, widths, strict=True)]
+        figure.add_trace(
+            go.Scatter(
+                x=path_1_x,
+                y=corridor_lower,
+                mode="lines",
+                name="情景 1 波动走廊下界",
+                line={"width": 0},
+                showlegend=False,
+                hoverinfo="skip",
+            ),
+            row=1,
+            col=1,
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=path_1_x,
+                y=corridor_upper,
+                mode="lines",
+                name="情景 1 ATR 不确定性走廊",
+                line={"width": 0},
+                fill="tonexty",
+                fillcolor="rgba(163,230,53,0.08)",
+                showlegend=False,
+                hoverinfo="skip",
+            ),
+            row=1,
+            col=1,
+        )
 
     figure.add_trace(
         go.Scatter(
-            x=common_x,
-            y=[current_price, target_midpoint],
+            x=path_1_x,
+            y=path_1_y,
             mode="lines+markers+text",
-            name="浪形情景 A：延续",
-            text=["", "A 延续"],
+            name="浪形情景 1：确认后延续",
+            text=[""] * (len(path_1_x) - 1) + ["情景 1"],
             textposition="top center",
             textfont={"color": WAVE_CONTINUATION_COLOR, "size": 11},
-            line={"color": WAVE_CONTINUATION_COLOR, "width": 2, "dash": "dot"},
-            marker={"color": WAVE_CONTINUATION_COLOR, "size": [0, 8]},
+            line={"color": WAVE_CONTINUATION_COLOR, "width": 2.5, "dash": "dash"},
+            marker={"color": WAVE_CONTINUATION_COLOR, "size": 6},
             hovertemplate=(
-                f"情景 A：候选延续<br>目标区：{zone_lower:.3f}–{zone_upper:.3f}"
-                "<br>横轴仅为路径示意，不预测到达时间<extra></extra>"
+                f"情景 1：确认后向{target_label}推进"
+                f"<br>目标区：{zone_lower:.3f}–{zone_upper:.3f}"
+                "<br>折线节点与横向距离均为结构示意，不预测具体价格或时间"
+                "<extra></extra>"
             ),
         ),
         row=1,
         col=1,
     )
+    if confirmation_price is not None and (
+        confirmation_pending or candidate.get("current_state") == "waiting"
+    ):
+        neutral_midpoint = (confirmation_price + invalidation_price) / 2
+        neutral_x = [
+            current_time,
+            current_time + interval * 2,
+            current_time + interval * 4,
+            current_time + interval * 6,
+        ]
+        neutral_y = [
+            current_price,
+            (current_price + neutral_midpoint) / 2,
+            current_price,
+            neutral_midpoint,
+        ]
+        figure.add_trace(
+            go.Scatter(
+                x=neutral_x,
+                y=neutral_y,
+                mode="lines+markers+text",
+                name="浪形情景 3：确认前震荡等待",
+                text=["", "", "", "情景 3"],
+                textposition="bottom center",
+                textfont={"color": WAVE_NEUTRAL_COLOR, "size": 11},
+                line={"color": WAVE_NEUTRAL_COLOR, "width": 1.8, "dash": "dot"},
+                marker={"color": WAVE_NEUTRAL_COLOR, "size": 5},
+                hovertemplate=(
+                    "情景 3：价格在确认位与失效位之间反复，候选继续观察"
+                    "<br>折线节点与横向距离均为结构示意，不预测具体价格或时间"
+                    "<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=path_2_x,
+            y=path_2_y,
+            mode="lines+markers+text",
+            name="浪形情景 2：尝试失败后失效",
+            text=["", "", "情景 2"],
+            textposition="bottom center",
+            textfont={"color": WAVE_INVALIDATION_COLOR, "size": 11},
+            line={"color": WAVE_INVALIDATION_COLOR, "width": 2.5, "dash": "dash"},
+            marker={"color": WAVE_INVALIDATION_COLOR, "size": 6},
+            hovertemplate=(
+                f"情景 2：确认尝试失败后转向{invalidation_label}"
+                f"<br>结构边界：{invalidation_price:.3f}<br>{invalidation_rule}"
+                "<br>折线节点与横向距离均为结构示意，不预测具体价格或时间"
+                "<extra></extra>"
+            ),
+        ),
+        row=1,
+        col=1,
+    )
+    if confirmation_price is not None:
+        figure.add_trace(
+            go.Scatter(
+                x=common_x,
+                y=[confirmation_price, confirmation_price],
+                mode="lines",
+                name="浪形确认位",
+                showlegend=False,
+                line={"color": WAVE_CONFIRMATION_COLOR, "width": 1.5, "dash": "dash"},
+                hovertemplate=(
+                    f"{confirmation_label} {confirmation_price:.3f}<br>{confirmation_rule}"
+                    "<br>未确认前属于观察状态<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
     figure.add_trace(
         go.Scatter(
             x=common_x,
-            y=[current_price, invalidation_price],
-            mode="lines+markers+text",
-            name="浪形情景 B：失效",
-            text=["", "B 失效/重计"],
-            textposition="bottom center",
-            textfont={"color": WAVE_INVALIDATION_COLOR, "size": 11},
-            line={"color": WAVE_INVALIDATION_COLOR, "width": 2, "dash": "dot"},
-            marker={"color": WAVE_INVALIDATION_COLOR, "size": [0, 8]},
+            y=[invalidation_price, invalidation_price],
+            mode="lines",
+            name="浪形失效位",
+            showlegend=False,
+            line={"color": WAVE_INVALIDATION_COLOR, "width": 1.5, "dash": "dot"},
             hovertemplate=(
-                f"情景 B：触及失效位 {invalidation_price:.3f}"
-                "<br>当前候选失效，需重新计浪"
-                "<br>横轴仅为路径示意，不预测到达时间<extra></extra>"
+                f"{invalidation_label} {invalidation_price:.3f}"
+                f"<br>{invalidation_rule}"
+                "<br>水平长度仅为展示空间，不预测到达时间<extra></extra>"
             ),
         ),
         row=1,
@@ -390,12 +544,24 @@ def _add_wave_scenarios(
     )
     figure.add_shape(
         type="rect",
-        x0=current_time + interval * 6,
-        x1=future_time + interval,
+        x0=current_time,
+        x1=future_time,
         y0=zone_lower,
         y1=zone_upper,
         fillcolor="rgba(163,230,53,0.10)",
         line={"color": "rgba(163,230,53,0.45)", "width": 1, "dash": "dot"},
+        row=1,
+        col=1,
+    )
+    figure.add_annotation(
+        x=future_time,
+        y=zone_upper,
+        text="右侧横向距离仅为情景示意，不代表时间",
+        showarrow=False,
+        xanchor="right",
+        yanchor="bottom",
+        font={"color": "#94a3b8", "size": 9},
+        bgcolor="rgba(11,16,23,0.72)",
         row=1,
         col=1,
     )

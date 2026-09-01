@@ -124,12 +124,23 @@ li + li { margin-top: 5px; }
 .indicator-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); }
 .indicator-list div { display: flex; justify-content: space-between; background: #0b121a; padding: 7px; gap: 6px; font-size: 11px; }
 .indicator-list span { color: var(--muted); }
-.factor-details summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #edf4fb; font-size: 14px; font-weight: 600; list-style: none; }
-.factor-details summary::-webkit-details-marker { display: none; }
-.factor-details summary::before { content: "▸"; color: var(--accent); transition: transform 0.16s ease; }
-.factor-details[open] summary::before { transform: rotate(90deg); }
-.factor-details summary span { color: var(--muted); font-size: 10px; font-weight: 400; }
-.factor-details .indicator-list { margin-top: 12px; }
+.audit-details summary { display: flex; align-items: center; gap: 8px; cursor: pointer; color: #edf4fb; font-size: 13px; font-weight: 700; list-style: none; }
+.audit-details summary::-webkit-details-marker { display: none; }
+.audit-details summary::before { content: "▸"; color: var(--accent); transition: transform 0.16s ease; }
+.audit-details[open] summary::before { transform: rotate(90deg); }
+.audit-details summary span { color: var(--muted); font-size: 10px; font-weight: 400; }
+.audit-details > :not(summary) { margin-top: 12px; }
+.audit-content ul + ul { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.wave-card { padding: 10px 11px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 4px; background: #0a1118; }
+.wave-card + .wave-card { margin-top: 8px; }
+.wave-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; color: #e7eef5; }
+.wave-card-head strong { font-size: 12px; }
+.wave-fit { color: #74d9eb; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wave-meta { margin-top: 5px; color: var(--muted); }
+.wave-scenario { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgb(38 52 66 / 70%); color: #c9d5df; }
+.wave-scenario + .wave-scenario { margin-top: 4px; padding-top: 0; border-top: 0; }
+.wave-history { margin-top: 8px; padding: 7px 8px; border-radius: 3px; background: rgb(37 182 210 / 7%); color: #a9cbd3; line-height: 1.6; }
+.wave-note { margin-top: 9px; color: #8091a2; line-height: 1.6; }
 .insight-grid { display: grid; grid-template-columns: 1.6fr 1fr; border: 1px solid var(--line); border-top: 0; }
 .insight-grid > section { padding: 16px; min-width: 0; }
 .insight-grid > section + section { border-left: 1px solid var(--line); }

@@ -255,6 +255,95 @@ const setupLabels = {
   trend_breakdown: "趋势破位退出",
 };
 
+const wavePatternLabels = {
+  impulse: "推动五浪",
+  unfinished_impulse: "未完成推动浪",
+  abc_zigzag: "ABC 锯齿调整",
+  unfinished_abc: "未完成 ABC 调整",
+};
+
+function renderWaveCandidates(wave) {
+  const target = document.querySelector("#wave-candidates");
+  target.replaceChildren();
+  const candidates = wave?.candidates || [];
+  if (!candidates.length) {
+    const empty = document.createElement("div");
+    empty.className = "wave-note";
+    empty.textContent = "暂无通过硬规则的浪形候选；等待更多已确认 Pivot。";
+    target.append(empty);
+  }
+  candidates.forEach((candidate, index) => {
+    const projection = candidate.projection || {};
+    const fit = candidate.structural_fit ?? candidate.confidence ?? 0;
+    const direction = candidate.direction === "down" ? "下行" : "上行";
+    const pathDirection = projection.path_direction === "down" ? "向下" : "向上";
+    const status = candidate.status === "developing" ? "进行中" : "已完成";
+    const currentState = candidate.current_state_label || "等待更多行情确认";
+    const validation = candidate.historical_validation || {};
+    const currentStage = candidate.status === "developing"
+      ? `当前处于${candidate.current_wave}浪形成阶段`
+      : `${candidate.current_wave}浪端点已经右侧确认`;
+    const zone = projection.primary_zone || [];
+    const card = document.createElement("article");
+    card.className = "wave-card";
+    const head = document.createElement("div");
+    head.className = "wave-card-head";
+    const title = document.createElement("strong");
+    title.textContent = `候选 ${index + 1} · ${wavePatternLabels[candidate.pattern] || candidate.pattern}（${direction}）`;
+    const score = document.createElement("span");
+    score.className = "wave-fit";
+    score.textContent = `结构匹配度 ${number(fit * 100, 1)}/100`;
+    const meta = document.createElement("div");
+    meta.className = "wave-meta";
+    meta.textContent = `${status} · ${candidate.scale || "标准尺度"} · ${currentStage} · ${currentState} · 匹配度不是方向概率`;
+    const targetScenario = document.createElement("div");
+    targetScenario.className = "wave-scenario";
+    targetScenario.textContent = zone.length === 2
+      ? `情景 1（${pathDirection}）：确认后向${projection.target_label || "条件目标观察区"}推进，观察 ${zone.join("–")}`
+      : "情景 1：当前结构暂不生成目标区";
+    const confirmationScenario = document.createElement("div");
+    confirmationScenario.className = "wave-scenario";
+    confirmationScenario.textContent = projection.confirmation == null
+      ? "确认门槛：等待新的已确认 Pivot"
+      : `确认门槛：${projection.confirmation_label || "路径确认位"} ${number(projection.confirmation, 3)}；${projection.confirmation_rule || "确认后再观察目标区"}`;
+    const invalidationScenario = document.createElement("div");
+    invalidationScenario.className = "wave-scenario";
+    invalidationScenario.textContent = projection.invalidation == null
+      ? "情景 2：暂无可用失效位"
+      : `情景 2：确认尝试失败并转向${projection.invalidation_label || "候选失效位"} ${number(projection.invalidation, 3)}；${projection.invalidation_rule || "失效后重新计浪"}`;
+    const neutralScenario = document.createElement("div");
+    neutralScenario.className = "wave-scenario";
+    neutralScenario.textContent = "情景 3：确认位与失效位之间震荡，候选保持观察，不提前选择方向。";
+    neutralScenario.classList.toggle("hidden", candidate.current_state !== "waiting");
+    const history = document.createElement("div");
+    history.className = "wave-history";
+    history.textContent = validation.calibrated
+      ? `历史逐根回放：已决样本 ${validation.resolved_count} 次，情景 1 目标先达率 ${number(validation.target_first_rate, 1)}%，目标中位用时 ${number(validation.median_target_bars, 1)} 根 K 线（最长观察 ${validation.lookahead_bars} 根）。`
+      : `历史逐根回放：同类样本 ${validation.sample_count || 0} 次、已决 ${validation.resolved_count || 0} 次；样本不足，暂不展示概率。`;
+    const corridorNote = document.createElement("div");
+    corridorNote.className = "wave-note";
+    corridorNote.textContent = "K 线图中的绿色半透明带为随路径扩张的 ATR 不确定性走廊；折线节点不是精确预测价。";
+    head.append(title, score);
+    card.append(
+      head,
+      meta,
+      confirmationScenario,
+      targetScenario,
+      invalidationScenario,
+      neutralScenario,
+      history,
+      corridorNote,
+    );
+    target.append(card);
+  });
+  if (wave?.note) {
+    const note = document.createElement("div");
+    note.className = "wave-note";
+    note.textContent = wave.note;
+    target.append(note);
+  }
+}
+
 function priceText(value, currency) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   const symbols = { CNY: "¥", USD: "$", HKD: "HK$", EUR: "€", JPY: "¥" };
@@ -325,12 +414,7 @@ function renderQuant(quant, security) {
     history.note || "历史统计不代表未来收益。",
   ]);
   const wave = quant?.wave || {};
-  renderRows("#wave-candidates", (wave.candidates || []).map((candidate, index) => (
-    `候选${index + 1}：${candidate.pattern} · 当前浪${candidate.current_wave} · `
-      + `置信度${number(candidate.confidence * 100, 1)}% · `
-      + `情景A目标区${(candidate.projection?.primary_zone || []).join("–")} · `
-      + `情景B失效位${number(candidate.projection?.invalidation, 3)}`
-  )));
+  renderWaveCandidates(wave);
   const factorTarget = document.querySelector("#factor-snapshot");
   factorTarget.replaceChildren();
   Object.entries(quant?.factor_snapshot || {}).forEach(([name, value]) => {

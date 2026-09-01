@@ -41,7 +41,11 @@ def impulse_fib_score(pivots: list[WavePivot]) -> tuple[float, dict[str, float]]
     }
 
 
-def momentum_volume_score(frame: pd.DataFrame, pivots: list[WavePivot]) -> float:
+def momentum_volume_score(
+    frame: pd.DataFrame,
+    pivots: list[WavePivot],
+    direction: int = 1,
+) -> float:
     """比较 W1 与 W3 末端的 MACD/成交量扩张，缺失时保持中性。"""
     if len(pivots) < 4:
         return 0.5
@@ -52,7 +56,8 @@ def momentum_volume_score(frame: pd.DataFrame, pivots: list[WavePivot]) -> float
         first = frame["MACD"].iloc[first_end]
         third = frame["MACD"].iloc[third_end]
         if pd.notna(first) and pd.notna(third):
-            scores.append(1.0 if third > first else 0.35)
+            expanded = third > first if direction > 0 else third < first
+            scores.append(1.0 if expanded else 0.35)
     if "volume" in frame:
         first_volume = frame["volume"].iloc[max(0, first_end - 2) : first_end + 1].mean()
         third_volume = frame["volume"].iloc[max(0, third_end - 2) : third_end + 1].mean()

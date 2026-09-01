@@ -103,8 +103,24 @@ def _payload() -> dict[str, object]:
                     {
                         "pattern": "unfinished_impulse",
                         "current_wave": 5,
+                        "status": "developing",
+                        "direction": "up",
+                        "scale": "标准尺度",
+                        "current_state": "waiting",
+                        "current_state_label": "等待收盘确认",
                         "confidence": 0.72,
-                        "projection": {"primary_zone": [13.4, 13.8], "invalidation": 11.9},
+                        "projection": {
+                            "primary_zone": [13.4, 13.8],
+                            "confirmation": 12.8,
+                            "invalidation": 11.9,
+                            "path_direction": "up",
+                        },
+                        "historical_validation": {
+                            "sample_count": 12,
+                            "resolved_count": 8,
+                            "calibrated": False,
+                            "lookahead_bars": 20,
+                        },
                     }
                 ]
             },
@@ -144,9 +160,20 @@ def main() -> None:
             assert page.locator("#overview-setup").inner_text() == "趋势回踩确认"
             assert "¥12.18" in page.locator("#overview-entry-zone").inner_text()
             wave_text = page.locator("#wave-candidates").inner_text()
-            assert "情景A目标区13.4–13.8" in wave_text
-            assert "情景B失效位11.900" in wave_text
+            assert "情景 1" in wave_text
+            assert "13.4–13.8" in wave_text
+            assert "情景 2" in wave_text
+            assert "11.900" in wave_text
+            assert "情景 3" in wave_text
+            assert "样本不足" in wave_text
             assert not page.locator(".factor-details").get_attribute("open")
+            audit_sections = page.locator(".audit-details")
+            assert audit_sections.count() >= 4
+            assert all(not audit_sections.nth(index).get_attribute("open") for index in range(4))
+            indicator_audit = page.locator(".audit-details").filter(has_text="指标最新值")
+            indicator_audit.locator("summary").click()
+            assert indicator_audit.get_attribute("open") is not None
+            assert indicator_audit.locator("#indicator-list").is_visible()
             page.evaluate(
                 """() => {
                   const graph = document.querySelector("#chart .plotly-graph-div");

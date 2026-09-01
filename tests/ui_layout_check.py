@@ -75,6 +75,9 @@ def inspect_layout(url: str, output_dir: Path) -> list[dict[str, object]]:
                     graph: rect('.plotly-graph-div'),
                     plotSvg: rect('.plotly-graph-div .main-svg'),
                     formOverlaps: overlaps,
+                    traceNames: [...(document.querySelector('.plotly-graph-div')?.data || [])]
+                      .map((trace) => trace.name || ''),
+                    waveText: document.querySelector('#wave-candidates')?.innerText || '',
                   };
                 }
                 """
@@ -108,6 +111,12 @@ def main() -> None:
             failures.append(f"{name}: Plotly 图表未铺满容器")
         if result["consoleErrors"]:
             failures.append(f"{name}: 浏览器控制台存在错误")
+        if "候选 1" in result["waveText"]:
+            trace_names = result["traceNames"]
+            if "浪形候选 Top-1" not in trace_names:
+                failures.append(f"{name}: 有浪形候选但 K 线图缺少 Top-1 连线")
+            if not any(str(item).startswith("浪形情景 1") for item in trace_names):
+                failures.append(f"{name}: 有浪形候选但 K 线图缺少后市情景")
     if failures:
         raise SystemExit("；".join(failures))
 

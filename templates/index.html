@@ -109,8 +109,18 @@
 
       <div class="detail-grid">
         <section><h2>评分构成</h2><div id="component-list"></div></section>
-        <section><h2>指标最新值</h2><div id="indicator-list" class="indicator-list"></div></section>
-        <section><h2>公式与数据质量</h2><ul id="formula-list"></ul><ul id="quality-list"></ul></section>
+        <section>
+          <details class="audit-details">
+            <summary>指标最新值 <span>审计数据</span></summary>
+            <div id="indicator-list" class="indicator-list"></div>
+          </details>
+        </section>
+        <section>
+          <details class="audit-details">
+            <summary>公式与数据质量 <span>按需查看</span></summary>
+            <div class="audit-content"><ul id="formula-list"></ul><ul id="quality-list"></ul></div>
+          </details>
+        </section>
       </div>
       <div class="insight-grid">
         <section>
@@ -119,8 +129,10 @@
           <div id="backtest-results" class="backtest-results"></div>
         </section>
         <section>
-          <h2>缓存与数据质量</h2>
-          <div id="cache-quality" class="quality-summary"></div>
+          <details class="audit-details">
+            <summary>缓存与数据质量 <span>采集审计</span></summary>
+            <div id="cache-quality" class="quality-summary"></div>
+          </details>
         </section>
       </div>
       <div class="insight-grid quant-grid">
@@ -137,13 +149,13 @@
           <div id="quant-history" class="quality-summary"></div>
         </section>
         <section>
-          <h2>Wave Candidate</h2>
+          <h2>浪形候选与后市情景</h2>
           <div id="wave-candidates" class="quality-summary"></div>
         </section>
       </div>
       <div class="insight-grid quant-grid">
         <section>
-          <details class="factor-details">
+          <details class="audit-details factor-details">
             <summary>Factor Snapshot <span>高级数据</span></summary>
             <div id="factor-snapshot" class="indicator-list"></div>
           </details>

@@ -84,6 +84,7 @@ def test_wave_scenarios_show_continuation_zone_and_invalidation(market_frame) ->
             {
                 "projection": {
                     "primary_zone": [18.5, 20.0],
+                    "confirmation": 16.8,
                     "invalidation": 13.2,
                 }
             }
@@ -93,12 +94,46 @@ def test_wave_scenarios_show_continuation_zone_and_invalidation(market_frame) ->
     _add_wave_scenarios(figure, market_frame, wave)
 
     assert [trace.name for trace in figure.data] == [
-        "浪形情景 A：延续",
-        "浪形情景 B：失效",
+        "浪形情景 1：确认后延续",
+        "浪形情景 2：尝试失败后失效",
+        "浪形确认位",
+        "浪形失效位",
     ]
     assert list(figure.data[0].y)[-1] == 19.25
+    assert len(figure.data[0].y) >= 3
     assert list(figure.data[1].y)[-1] == 13.2
-    assert "不预测到达时间" in figure.data[0].hovertemplate
+    assert list(figure.data[2].y)[-1] == 16.8
+    assert list(figure.data[3].y)[-1] == 13.2
+    assert "不预测具体价格或时间" in figure.data[0].hovertemplate
     assert len(figure.layout.shapes) == 1
     assert figure.layout.shapes[0].y0 == 18.5
     assert figure.layout.shapes[0].y1 == 20.0
+    assert "不代表时间" in figure.layout.annotations[-1].text
+
+
+def test_waiting_wave_adds_atr_corridor_and_neutral_scenario(market_frame) -> None:
+    frame = market_frame.copy()
+    current = float(frame["close"].iloc[-1])
+    frame["ATR14"] = 0.5
+    figure = make_subplots(rows=1, cols=1)
+    wave = {
+        "candidates": [
+            {
+                "current_state": "waiting",
+                "projection": {
+                    "primary_zone": [current + 2, current + 3],
+                    "confirmation": current + 1,
+                    "invalidation": current - 1,
+                    "path_direction": "up",
+                },
+            }
+        ]
+    }
+
+    _add_wave_scenarios(figure, frame, wave)
+
+    names = [trace.name for trace in figure.data]
+    assert "情景 1 ATR 不确定性走廊" in names
+    assert "浪形情景 3：确认前震荡等待" in names
+    corridor = next(trace for trace in figure.data if trace.name == "情景 1 ATR 不确定性走廊")
+    assert corridor.fill == "tonexty"
