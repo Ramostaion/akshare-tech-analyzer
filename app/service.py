@@ -18,6 +18,7 @@ from app.config import Settings, settings
 from app.data_provider import MarketDataProvider
 from app.execution import ExecutionConfig
 from app.factors import build_factors, factor_snapshot
+from app.gann import analyze_gann
 from app.indicators import add_indicators
 from app.levels import identify_levels
 from app.logging_config import get_logger
@@ -121,6 +122,7 @@ class AnalyzerService:
         if current_signal is not None and similar_stats["sample_count"] >= 30:
             current_signal.historical_probability = similar_stats["win_rate"] / 100
         wave_analysis = analyze_wave_candidates(enriched)
+        gann_analysis = analyze_gann(enriched)
         quant = {
             "factor_snapshot": factor_snapshot(factors),
             "market_regime": regime,
@@ -132,6 +134,7 @@ class AnalyzerService:
             "historical_similar": similar_stats,
             "backtest": strategy_backtest,
             "wave": wave_analysis,
+            "gann": gann_analysis,
         }
         analysis["technical_score_label"] = "Market / Technical State Score"
         analysis["quant"] = quant
@@ -145,7 +148,16 @@ class AnalyzerService:
                 "连续参考序列可能受换月跳空影响，关键位可信度已按较低等级展示。"
             )
         title = f"{security.symbol} {security.name}"
-        figure = create_figure(enriched, analysis, levels, request, title, signals, wave_analysis)
+        figure = create_figure(
+            enriched,
+            analysis,
+            levels,
+            request,
+            title,
+            signals,
+            wave_analysis,
+            gann_analysis,
+        )
         chart_html = render_figure_html(figure, full_html=False)
         report_html = build_report_html(figure, market_data, request, analysis, levels, quant)
         report_id = secrets.token_urlsafe(18)

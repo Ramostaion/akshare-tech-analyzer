@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -7,6 +8,7 @@ from app.charts import (
     BUY_TRIGGER_COLOR,
     WAVE_COLOR,
     _add_buy_signal_markers,
+    _add_gann_overlay,
     _add_wave_overlay,
     _add_wave_scenarios,
 )
@@ -75,6 +77,7 @@ def test_top_wave_candidate_is_connected_and_labeled() -> None:
     assert list(trace.text) == ["0", "1", "2", "3", "4", "5"]
     assert "推动五浪 · 3浪" in trace.customdata[3]
     assert "右侧确认滞后：3根 K 线" in trace.customdata[3]
+    assert trace.meta["algorithm"] == "wave"
 
 
 def test_wave_scenarios_show_continuation_zone_and_invalidation(market_frame) -> None:
@@ -109,6 +112,7 @@ def test_wave_scenarios_show_continuation_zone_and_invalidation(market_frame) ->
     assert figure.layout.shapes[0].y0 == 18.5
     assert figure.layout.shapes[0].y1 == 20.0
     assert "不代表时间" in figure.layout.annotations[-1].text
+    assert figure.layout.shapes[0].name.startswith("algorithm-wave")
 
 
 def test_waiting_wave_adds_atr_corridor_and_neutral_scenario(market_frame) -> None:
@@ -137,3 +141,53 @@ def test_waiting_wave_adds_atr_corridor_and_neutral_scenario(market_frame) -> No
     assert "浪形情景 3：确认前震荡等待" in names
     corridor = next(trace for trace in figure.data if trace.name == "情景 1 ATR 不确定性走廊")
     assert corridor.fill == "tonexty"
+
+
+def test_gann_overlay_is_grouped_and_hidden_by_default(market_frame) -> None:
+    frame = add_indicators(market_frame)
+    latest = frame["datetime"].iloc[-1]
+    anchor_time = frame["datetime"].iloc[-20]
+    gann = {
+        "status": "active",
+        "direction": "up",
+        "anchor": {
+            "timestamp": anchor_time,
+            "confirmed_at": frame["datetime"].iloc[-17],
+            "price": 16.0,
+        },
+        "fan_lines": [
+            {
+                "label": label,
+                "start_time": anchor_time,
+                "start_price": 16.0,
+                "current_time": latest,
+                "current_price": float(frame["close"].iloc[-1]),
+                "end_time": latest + pd.Timedelta(days=24),
+                "end_price": end_price,
+            }
+            for label, end_price in (("2×1", 20.0), ("1×1", 18.0), ("1×2", 17.0))
+        ],
+        "price_levels": [
+            {"label": "50.0%", "price": 18.0},
+            {"label": "100.0%", "price": 20.0},
+        ],
+        "time_cycles": [{"bars": 24, "datetime": latest + pd.Timedelta(days=8)}],
+        "confirmation": 18.0,
+        "invalidation": 16.0,
+    }
+    figure = make_subplots(rows=1, cols=1)
+
+    _add_gann_overlay(figure, frame, gann)
+
+    names = [trace.name for trace in figure.data]
+    assert "江恩自动确认锚点" in names
+    assert "江恩后续趋势 1×1" in names
+    assert "江恩价格分割" in names
+    assert "江恩时间观察窗" in names
+    gann_traces = [
+        trace for trace in figure.data if trace.meta and trace.meta["algorithm"] == "gann"
+    ]
+    assert all(trace.visible is False for trace in gann_traces)
+    trends = [trace for trace in gann_traces if str(trace.name).startswith("江恩后续趋势")]
+    assert all(pd.Timestamp(trace.x[0]) == pd.Timestamp(latest) for trace in trends)
+    assert all(float(trace.y[0]) == float(frame["close"].iloc[-1]) for trace in trends)

@@ -37,18 +37,42 @@ def main() -> None:
             page.goto(args.url, wait_until="networkidle")
             page.locator("#asset-type").select_option("global_future")
             page.locator("#symbol").fill("GC")
+            page.locator(".parameter-details summary").click()
             page.locator("#start").fill("2024-09-01")
             page.locator("#end").fill("2026-09-01")
             page.locator("#analyze-button").click()
             page.locator(".plotly-graph-div").wait_for(state="visible", timeout=120_000)
+            page.locator('[data-algorithm="gann"]').click()
+            page.locator('[data-algorithm="wave"]').click()
+            page.wait_for_timeout(250)
             result = page.evaluate(
                 """
-                () => ({
-                  traces: [...(document.querySelector('.plotly-graph-div')?.data || [])]
+                () => {
+                  const graph = document.querySelector('.plotly-graph-div');
+                  const traces = [...(graph?.data || [])];
+                  return {
+                  traces: traces
                     .map((trace) => trace.name || ''),
                   waveText: document.querySelector('#wave-candidates')?.innerText || '',
                   overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
-                })
+                  gannVisible: traces.filter((trace) => trace.meta?.algorithm === 'gann')
+                    .every((trace) => trace.visible === true),
+                  waveHidden: traces.filter((trace) => trace.meta?.algorithm === 'wave')
+                    .every((trace) => trace.visible === false),
+                  waveShapesHidden: [...(graph?.layout?.shapes || [])]
+                    .filter((shape) => String(shape.name || '').startsWith('algorithm-wave'))
+                    .every((shape) => shape.visible === false),
+                  priceAxisRange: graph?._fullLayout?.yaxis?.range || [],
+                  gannRanges: traces
+                    .filter((trace) => trace.meta?.algorithm === 'gann')
+                    .map((trace) => ({name: trace.name, y: trace.y || []})),
+                  gannTrendInRange: Math.max(...traces
+                    .filter((trace) => String(trace.name || '').startsWith('江恩后续趋势'))
+                    .flatMap((trace) => [...(trace.x || [])]
+                      .map((value) => new Date(value).getTime())))
+                    <= new Date(graph?._fullLayout?.xaxis?.range?.[1]).getTime(),
+                  };
+                }
                 """
             )
             result["viewport"] = name
@@ -64,6 +88,11 @@ def main() -> None:
         assert "浪形候选 Top-1" in traces
         assert any(str(item).startswith("浪形情景 1") for item in traces)
         assert any(str(item).startswith("浪形情景 2") for item in traces)
+        assert "江恩后续趋势 1×1" in traces
+        assert result["gannVisible"]
+        assert result["waveHidden"]
+        assert result["waveShapesHidden"]
+        assert result["gannTrendInRange"]
         assert not result["overflow"]
         assert not result["errors"]
 

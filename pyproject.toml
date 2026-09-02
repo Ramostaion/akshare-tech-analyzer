@@ -33,7 +33,7 @@ dev = [
 akshare-analyzer = "app.cli:main"
 
 [tool.setuptools]
-packages = ["app"]
+packages = ["app", "app.gann", "app.wave"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

@@ -13,6 +13,7 @@ const quickInstruments = document.querySelector("#quick-instruments");
 const favoriteButton = document.querySelector("#favorite-button");
 const favoriteContextMenu = document.querySelector("#favorite-context-menu");
 const removeFavoriteButton = document.querySelector("#remove-favorite");
+const algorithmButtons = [...document.querySelectorAll(".algorithm-toggle")];
 let refreshTimer = null;
 let chartResizeObserver = null;
 let chartResizeFrame = null;
@@ -20,6 +21,7 @@ let suggestionTimer = null;
 let currentInstrument = null;
 let contextFavorite = null;
 let renderedChartContext = null;
+const algorithmVisibility = { wave: true, gann: false };
 
 const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
 const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
@@ -284,18 +286,18 @@ function renderWaveCandidates(wave) {
       ? `当前处于${candidate.current_wave}浪形成阶段`
       : `${candidate.current_wave}浪端点已经右侧确认`;
     const zone = projection.primary_zone || [];
-    const card = document.createElement("article");
-    card.className = "wave-card";
-    const head = document.createElement("div");
+    const card = document.createElement(index === 0 ? "article" : "details");
+    card.className = index === 0 ? "wave-card" : "wave-card wave-card-secondary";
+    const head = document.createElement(index === 0 ? "div" : "summary");
     head.className = "wave-card-head";
     const title = document.createElement("strong");
-    title.textContent = `候选 ${index + 1} · ${wavePatternLabels[candidate.pattern] || candidate.pattern}（${direction}）`;
+    title.textContent = `候选 ${index + 1}${index === 0 ? " · 首选结构" : ""} · ${wavePatternLabels[candidate.pattern] || candidate.pattern}（${direction}）`;
     const score = document.createElement("span");
     score.className = "wave-fit";
     score.textContent = `结构匹配度 ${number(fit * 100, 1)}/100`;
     const meta = document.createElement("div");
     meta.className = "wave-meta";
-    meta.textContent = `${status} · ${candidate.scale || "标准尺度"} · ${currentStage} · ${currentState} · 匹配度不是方向概率`;
+    meta.textContent = `${status} · ${candidate.scale || "标准尺度"} · ${currentStage} · ${currentState}`;
     const targetScenario = document.createElement("div");
     targetScenario.className = "wave-scenario";
     targetScenario.textContent = zone.length === 2
@@ -323,17 +325,13 @@ function renderWaveCandidates(wave) {
     const corridorNote = document.createElement("div");
     corridorNote.className = "wave-note";
     corridorNote.textContent = "K 线图中的绿色半透明带为随路径扩张的 ATR 不确定性走廊；折线节点不是精确预测价。";
+    const evidence = document.createElement("details");
+    evidence.className = "wave-evidence";
+    const evidenceSummary = document.createElement("summary");
+    evidenceSummary.textContent = "历史验证与图表说明";
+    evidence.append(evidenceSummary, history, corridorNote);
     head.append(title, score);
-    card.append(
-      head,
-      meta,
-      confirmationScenario,
-      targetScenario,
-      invalidationScenario,
-      neutralScenario,
-      history,
-      corridorNote,
-    );
+    card.append(head, meta, confirmationScenario, targetScenario, invalidationScenario, neutralScenario, evidence);
     target.append(card);
   });
   if (wave?.note) {
@@ -342,6 +340,41 @@ function renderWaveCandidates(wave) {
     note.textContent = wave.note;
     target.append(note);
   }
+}
+
+function renderGann(gann) {
+  const target = document.querySelector("#gann-analysis");
+  target.replaceChildren();
+  if (!gann || gann.status !== "active") {
+    renderRows("#gann-analysis", [gann?.note || "暂无足够的已确认高低点。"]);
+    return;
+  }
+  const anchor = gann.anchor || {};
+  const scale = gann.scale || {};
+  const history = gann.historical_validation || {};
+  const direction = gann.direction === "down" ? "下行" : "上行";
+  const anchorDate = anchor.timestamp ? new Date(anchor.timestamp).toLocaleDateString("zh-CN") : "--";
+  const confirmedDate = anchor.confirmed_at
+    ? new Date(anchor.confirmed_at).toLocaleDateString("zh-CN")
+    : "--";
+  const cycles = (gann.time_cycles || []).map((item) => `${item.bars}根`).join("、");
+  const nearestLevels = [...(gann.price_levels || [])]
+    .sort((left, right) => Math.abs(left.price - anchor.price) - Math.abs(right.price - anchor.price))
+    .slice(0, 4)
+    .map((item) => `${item.label}：${number(item.price, 3)}`)
+    .join(" · ");
+  renderRows("#gann-analysis", [
+    `自动结构锚点：${anchorDate} ${number(anchor.price, 3)}；${confirmedDate} 完成右侧确认`,
+    `方向：${direction} · 当前状态：${gann.current_state_label || "等待确认"}`,
+    `归一化尺度：${scale.method || "ATR14/8 每根 K 线"}；1×1 单位 ${number(scale.unit_per_bar, 4)}`,
+    `收盘确认位：${number(gann.confirmation, 3)} · 结构失效位：${number(gann.invalidation, 3)}`,
+    `附近价格分割：${nearestLevels || "暂无"}`,
+    `未来时间观察窗：${cycles || "当前锚点周期均已进入历史"}`,
+    history.calibrated
+      ? `历史逐根回放：已决 ${history.resolved_count} 次，目标先达率 ${number(history.target_first_rate, 1)}%，目标中位用时 ${number(history.median_target_bars, 1)} 根。`
+      : `历史逐根回放：样本 ${history.sample_count || 0} 次、已决 ${history.resolved_count || 0} 次；样本不足，暂不展示概率。`,
+    gann.note,
+  ]);
 }
 
 function priceText(value, currency) {
@@ -367,15 +400,15 @@ function renderQuant(quant, security) {
   document.querySelector("#signal-score-fill").style.width = `${signalScore || 0}%`;
   renderRows("#quant-signal", [
     `市场状态：${regime.regime || "INSUFFICIENT_DATA"} · 置信度${number((regime.confidence || 0) * 100, 1)}%`,
-    `当前Setup：${setups.length ? setups.map((item) => `${item.setup}${item.triggered ? "（已触发）" : "（等待触发）"}`).join("、") : "无"}`,
-    `Signal Quality Score：${signal ? `${number(signal.score, 1)}/100（规则分，不是上涨概率）` : "无已触发信号"}`,
+    `当前交易形态：${setups.length ? setups.map((item) => `${setupLabels[item.setup] || item.setup}${item.triggered ? "（已触发）" : "（等待触发）"}`).join("、") : "无"}`,
+    `信号质量分：${signal ? `${number(signal.score, 1)}/100（规则分，不是上涨概率）` : "无已触发信号"}`,
     ...(regime.evidence || []),
   ]);
   renderRows("#quant-risk", signal ? [
-    `方向：${signal.direction} · 收盘参考价${number(signal.entry_reference, 3)} · 默认下一交易日开盘执行`,
-    `Stop / Invalidation：${number(signal.stop_price, 3)}`,
-    `Target 1：${number(signal.target_1, 3)} · Target 2：${number(signal.target_2, 3)}`,
-    `Reward/Risk：${number(signal.reward_risk_ratio, 2)}`,
+    `方向：${signal.direction === "long" ? "做多" : "退出"} · 收盘参考价 ${number(signal.entry_reference, 3)} · 默认下一交易日开盘执行`,
+    `失效位：${number(signal.stop_price, 3)}`,
+    `第一目标：${number(signal.target_1, 3)} · 第二目标：${number(signal.target_2, 3)}`,
+    `潜在盈亏比：${number(signal.reward_risk_ratio, 2)}`,
   ] : []);
   const history = quant?.historical_similar || {};
   setText("#overview-samples", `${history.sample_count || 0} 次`);
@@ -409,12 +442,13 @@ function renderQuant(quant, security) {
   renderRows("#quant-history", [
     `样本数：${history.sample_count || 0}`,
     `历史胜率：${history.win_rate == null ? "--" : `${number(history.win_rate)}%`}`,
-    `Expected R：${number(history.expected_r, 3)}`,
-    `Median MFE：${number(history.median_mfe_r, 3)}R · Median MAE：${number(history.median_mae_r, 3)}R`,
+    `历史期望：${number(history.expected_r, 3)}R`,
+    `有利波动中位数：${number(history.median_mfe_r, 3)}R · 不利波动中位数：${number(history.median_mae_r, 3)}R`,
     history.note || "历史统计不代表未来收益。",
   ]);
   const wave = quant?.wave || {};
   renderWaveCandidates(wave);
+  renderGann(quant?.gann || {});
   const factorTarget = document.querySelector("#factor-snapshot");
   factorTarget.replaceChildren();
   Object.entries(quant?.factor_snapshot || {}).forEach(([name, value]) => {
@@ -429,9 +463,9 @@ function renderQuant(quant, security) {
   const metrics = quant?.backtest?.metrics || {};
   renderRows("#quant-backtest", [
     `交易数：${metrics.trade_count || 0} · 胜率${metrics.win_rate == null ? "--" : `${number(metrics.win_rate)}%`}`,
-    `Expectancy：${number(metrics.expectancy_r, 3)}R · Profit Factor：${number(metrics.profit_factor, 3)}`,
+    `每笔期望：${number(metrics.expectancy_r, 3)}R · 盈亏因子：${number(metrics.profit_factor, 3)}`,
     `累计收益：${metrics.cumulative_return == null ? "--" : `${number(metrics.cumulative_return)}%`} · 最大回撤${metrics.max_drawdown == null ? "--" : `${number(metrics.max_drawdown)}%`}`,
-    `平均持有：${number(metrics.average_holding_bars, 1)}根 · Sharpe：${number(metrics.sharpe, 3)}`,
+    `平均持有：${number(metrics.average_holding_bars, 1)}根 · 夏普比率：${number(metrics.sharpe, 3)}`,
   ]);
 }
 
@@ -460,6 +494,85 @@ function restoreChartView(graph, view) {
   };
   requestAnimationFrame(applyView);
 }
+
+function updateAlgorithmButtons() {
+  algorithmButtons.forEach((button) => {
+    const enabled = algorithmVisibility[button.dataset.algorithm];
+    button.classList.toggle("active", enabled);
+    button.setAttribute("aria-pressed", String(enabled));
+  });
+}
+
+function fitPredictionView(graph) {
+  const update = { "yaxis.autorange": true };
+  const layout = graph?._fullLayout || graph?.layout || {};
+  const xAxes = Object.keys(layout).filter((key) => /^xaxis\d*$/.test(key));
+  (xAxes.length ? xAxes : ["xaxis"]).forEach((axis) => {
+    update[`${axis}.autorange`] = true;
+  });
+  return window.Plotly.relayout(graph, update);
+}
+
+function setAlgorithmLayer(graph, algorithm, enabled, fitView = false) {
+  if (!graph || !window.Plotly) return Promise.resolve();
+  const traceIndices = [...(graph.data || [])]
+    .map((trace, index) => trace.meta?.algorithm === algorithm ? index : -1)
+    .filter((index) => index >= 0);
+  const layoutUpdate = {};
+  [...(graph.layout?.shapes || [])].forEach((shape, index) => {
+    if (String(shape.name || "").startsWith(`algorithm-${algorithm}`)) {
+      layoutUpdate[`shapes[${index}].visible`] = enabled;
+    }
+  });
+  [...(graph.layout?.annotations || [])].forEach((annotation, index) => {
+    if (String(annotation.name || "").startsWith(`algorithm-${algorithm}`)) {
+      layoutUpdate[`annotations[${index}].visible`] = enabled;
+    }
+  });
+  const undoState = graph.__akshareShapeUndo;
+  if (undoState) undoState.applying = true;
+  const operations = [];
+  if (traceIndices.length) operations.push(window.Plotly.restyle(graph, { visible: enabled }, traceIndices));
+  if (Object.keys(layoutUpdate).length) operations.push(window.Plotly.relayout(graph, layoutUpdate));
+  return Promise.all(operations).then(() => {
+    if (algorithm === "gann" && enabled && fitView) {
+      return fitPredictionView(graph);
+    }
+    return undefined;
+  }).finally(() => {
+    if (undoState) undoState.applying = false;
+  });
+}
+
+function applyAlgorithmLayers(graph) {
+  let attempts = 0;
+  const apply = () => {
+    attempts += 1;
+    if (!graph?._fullLayout || !window.Plotly) {
+      if (attempts < 60) requestAnimationFrame(apply);
+      return;
+    }
+    Object.entries(algorithmVisibility).forEach(([algorithm, enabled]) => {
+      setAlgorithmLayer(graph, algorithm, enabled);
+    });
+  };
+  requestAnimationFrame(apply);
+}
+
+algorithmButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const algorithm = button.dataset.algorithm;
+    algorithmVisibility[algorithm] = !algorithmVisibility[algorithm];
+    updateAlgorithmButtons();
+    setAlgorithmLayer(
+      document.querySelector("#chart .plotly-graph-div"),
+      algorithm,
+      algorithmVisibility[algorithm],
+      true,
+    );
+  });
+});
+updateAlgorithmButtons();
 
 function chartContext(data) {
   const request = data.request || {};
@@ -639,6 +752,7 @@ function renderResult(data, preserveChartView = false) {
     chartResizeObserver.observe(chart);
     requestAnimationFrame(() => requestAnimationFrame(resizeChart));
     restoreChartView(graph, savedChartView);
+    applyAlgorithmLayers(graph);
   }
   downloadButton.href = data.download_url;
   downloadButton.classList.remove("disabled");

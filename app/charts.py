@@ -24,6 +24,9 @@ WAVE_CONTINUATION_COLOR = "#a3e635"
 WAVE_INVALIDATION_COLOR = "#fb7185"
 WAVE_CONFIRMATION_COLOR = "#fbbf24"
 WAVE_NEUTRAL_COLOR = "#94a3b8"
+GANN_COLOR = "#c084fc"
+GANN_FAST_COLOR = "#e879f9"
+GANN_SLOW_COLOR = "#818cf8"
 
 SETUP_LABELS = {
     "trend_pullback": "趋势回踩",
@@ -309,6 +312,8 @@ def _add_wave_overlay(figure: go.Figure, wave: dict[str, Any]) -> None:
             y=y_values,
             mode="lines+markers+text",
             name="浪形候选 Top-1",
+            meta={"algorithm": "wave"},
+            legendgroup="algorithm-wave",
             text=point_labels,
             textposition=text_positions,
             textfont={"color": WAVE_COLOR, "size": 12},
@@ -407,6 +412,8 @@ def _add_wave_scenarios(
                 y=corridor_lower,
                 mode="lines",
                 name="情景 1 波动走廊下界",
+                meta={"algorithm": "wave"},
+                legendgroup="algorithm-wave",
                 line={"width": 0},
                 showlegend=False,
                 hoverinfo="skip",
@@ -420,6 +427,8 @@ def _add_wave_scenarios(
                 y=corridor_upper,
                 mode="lines",
                 name="情景 1 ATR 不确定性走廊",
+                meta={"algorithm": "wave"},
+                legendgroup="algorithm-wave",
                 line={"width": 0},
                 fill="tonexty",
                 fillcolor="rgba(163,230,53,0.08)",
@@ -436,6 +445,8 @@ def _add_wave_scenarios(
             y=path_1_y,
             mode="lines+markers+text",
             name="浪形情景 1：确认后延续",
+            meta={"algorithm": "wave"},
+            legendgroup="algorithm-wave",
             text=[""] * (len(path_1_x) - 1) + ["情景 1"],
             textposition="top center",
             textfont={"color": WAVE_CONTINUATION_COLOR, "size": 11},
@@ -473,6 +484,8 @@ def _add_wave_scenarios(
                 y=neutral_y,
                 mode="lines+markers+text",
                 name="浪形情景 3：确认前震荡等待",
+                meta={"algorithm": "wave"},
+                legendgroup="algorithm-wave",
                 text=["", "", "", "情景 3"],
                 textposition="bottom center",
                 textfont={"color": WAVE_NEUTRAL_COLOR, "size": 11},
@@ -493,6 +506,8 @@ def _add_wave_scenarios(
             y=path_2_y,
             mode="lines+markers+text",
             name="浪形情景 2：尝试失败后失效",
+            meta={"algorithm": "wave"},
+            legendgroup="algorithm-wave",
             text=["", "", "情景 2"],
             textposition="bottom center",
             textfont={"color": WAVE_INVALIDATION_COLOR, "size": 11},
@@ -515,6 +530,8 @@ def _add_wave_scenarios(
                 y=[confirmation_price, confirmation_price],
                 mode="lines",
                 name="浪形确认位",
+                meta={"algorithm": "wave"},
+                legendgroup="algorithm-wave",
                 showlegend=False,
                 line={"color": WAVE_CONFIRMATION_COLOR, "width": 1.5, "dash": "dash"},
                 hovertemplate=(
@@ -531,6 +548,8 @@ def _add_wave_scenarios(
             y=[invalidation_price, invalidation_price],
             mode="lines",
             name="浪形失效位",
+            meta={"algorithm": "wave"},
+            legendgroup="algorithm-wave",
             showlegend=False,
             line={"color": WAVE_INVALIDATION_COLOR, "width": 1.5, "dash": "dot"},
             hovertemplate=(
@@ -543,6 +562,7 @@ def _add_wave_scenarios(
         col=1,
     )
     figure.add_shape(
+        name="algorithm-wave-target-zone",
         type="rect",
         x0=current_time,
         x1=future_time,
@@ -554,6 +574,7 @@ def _add_wave_scenarios(
         col=1,
     )
     figure.add_annotation(
+        name="algorithm-wave-time-note",
         x=future_time,
         y=zone_upper,
         text="右侧横向距离仅为情景示意，不代表时间",
@@ -567,6 +588,174 @@ def _add_wave_scenarios(
     )
 
 
+def _add_gann_overlay(
+    figure: go.Figure,
+    frame: pd.DataFrame,
+    gann: dict[str, Any],
+) -> None:
+    """绘制 ATR 归一化江恩扇形、价格分割和时间周期。"""
+    if gann.get("status") != "active" or frame.empty:
+        return
+    anchor = gann.get("anchor", {})
+    anchor_time = pd.Timestamp(anchor.get("timestamp"))
+    anchor_price = float(anchor.get("price"))
+    direction = str(gann.get("direction", "up"))
+    direction_label = "上行" if direction == "up" else "下行"
+    common = {
+        "meta": {"algorithm": "gann"},
+        "legendgroup": "algorithm-gann",
+        "visible": False,
+    }
+    fan_items = gann.get("fan_lines", [])
+    future_times = [pd.Timestamp(item["end_time"]) for item in fan_items]
+    latest_time = pd.Timestamp(frame["datetime"].iloc[-1])
+    future_end = max(future_times, default=latest_time)
+    current_close = float(frame["close"].iloc[-1])
+    trend_end_prices = [float(item["end_price"]) for item in fan_items]
+    padding_prices = [current_close, *trend_end_prices]
+    figure.add_trace(
+        go.Scatter(
+            x=[latest_time] + [future_end] * len(trend_end_prices),
+            y=padding_prices,
+            mode="lines",
+            name="江恩未来显示空间",
+            line={"width": 0},
+            opacity=0,
+            showlegend=False,
+            hoverinfo="skip",
+        ),
+        row=1,
+        col=1,
+    )
+
+    figure.add_trace(
+        go.Scatter(
+            x=[anchor_time],
+            y=[anchor_price],
+            mode="markers+text",
+            name="江恩自动确认锚点",
+            text=["G"],
+            textposition="top center" if direction == "up" else "bottom center",
+            marker={"color": GANN_COLOR, "size": 10, "symbol": "diamond"},
+            hovertemplate=(
+                f"江恩自动锚点（{direction_label}）<br>日期：%{{x|%Y-%m-%d %H:%M}}"
+                f"<br>价格：%{{y:.3f}}<br>右侧确认：{anchor.get('confirmed_at', '--')}"
+                "<extra></extra>"
+            ),
+            **common,
+        ),
+        row=1,
+        col=1,
+    )
+    fan_colors = {"2×1": GANN_FAST_COLOR, "1×1": GANN_COLOR, "1×2": GANN_SLOW_COLOR}
+    for item in fan_items:
+        label = str(item["label"])
+        figure.add_trace(
+            go.Scatter(
+                x=[
+                    pd.Timestamp(item.get("current_time", item["start_time"])),
+                    pd.Timestamp(item["end_time"]),
+                ],
+                y=[float(item.get("current_price", item["start_price"])), float(item["end_price"])],
+                mode="lines+text",
+                name=f"江恩后续趋势 {label}",
+                text=["", label],
+                textposition="middle right",
+                textfont={"color": fan_colors.get(label, GANN_COLOR), "size": 11},
+                line={
+                    "color": fan_colors.get(label, GANN_COLOR),
+                    "width": 3 if label == "1×1" else 2,
+                    "dash": "solid" if label == "1×1" else "dash",
+                },
+                hovertemplate=(
+                    f"江恩后续趋势 {label}<br>ATR 归一化路径"
+                    "<br>横向延伸是结构观察范围，不是精确到达时间<extra></extra>"
+                ),
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+    level_end = max(future_times, default=latest_time)
+    level_x: list[pd.Timestamp | None] = []
+    level_y: list[float | None] = []
+    level_text: list[str | None] = []
+    levels = sorted(
+        gann.get("price_levels", []),
+        key=lambda item: abs(float(item["price"]) - float(frame["close"].iloc[-1])),
+    )[:5]
+    for item in levels:
+        price = float(item["price"])
+        level_x.extend([latest_time, level_end, None])
+        level_y.extend([price, price, None])
+        level_text.extend([str(item["label"]), str(item["label"]), None])
+    if level_x:
+        figure.add_trace(
+            go.Scatter(
+                x=level_x,
+                y=level_y,
+                text=level_text,
+                mode="lines",
+                name="江恩价格分割",
+                line={"color": "rgba(192,132,252,0.55)", "width": 1, "dash": "dot"},
+                hovertemplate="江恩价格分割 %{text}<br>价格：%{y:.3f}<extra></extra>",
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+    visible_low = float(frame["low"].tail(120).min())
+    visible_high = float(frame["high"].tail(120).max())
+    cycle_x: list[pd.Timestamp | None] = []
+    cycle_y: list[float | None] = []
+    cycle_text: list[str | None] = []
+    for item in gann.get("time_cycles", []):
+        timestamp = pd.Timestamp(item["datetime"])
+        cycle_x.extend([timestamp, timestamp, None])
+        cycle_y.extend([visible_low, visible_high, None])
+        label = f"{item['bars']}根"
+        cycle_text.extend([label, label, None])
+    if cycle_x:
+        figure.add_trace(
+            go.Scatter(
+                x=cycle_x,
+                y=cycle_y,
+                text=cycle_text,
+                mode="lines",
+                name="江恩时间观察窗",
+                line={"color": "rgba(129,140,248,0.25)", "width": 1, "dash": "dot"},
+                hovertemplate="江恩时间周期 %{text}<br>仅为观察窗口<extra></extra>",
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+    boundary_end = level_end
+    for name, price, color, dash in (
+        ("江恩确认位", gann.get("confirmation"), GANN_FAST_COLOR, "dash"),
+        ("江恩失效位", gann.get("invalidation"), WAVE_INVALIDATION_COLOR, "dot"),
+    ):
+        if price is None:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                x=[latest_time, boundary_end],
+                y=[float(price), float(price)],
+                mode="lines",
+                name=name,
+                showlegend=False,
+                line={"color": color, "width": 1.5, "dash": dash},
+                hovertemplate=f"{name} %{{y:.3f}}<br>以收盘确认<extra></extra>",
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+
 def create_figure(
     frame: pd.DataFrame,
     analysis: dict[str, Any],
@@ -575,6 +764,7 @@ def create_figure(
     title: str,
     signals: list[TradingSignal] | None = None,
     wave: dict[str, Any] | None = None,
+    gann: dict[str, Any] | None = None,
 ) -> go.Figure:
     """创建主图、成交量、MACD、RSI 以及可选 KDJ 子图。"""
     show_kdj = request.show_kdj
@@ -616,6 +806,7 @@ def create_figure(
     _add_buy_signal_markers(figure, frame, signals or [])
     _add_wave_overlay(figure, wave or {})
     _add_wave_scenarios(figure, frame, wave or {})
+    _add_gann_overlay(figure, frame, gann or {})
 
     volume_colors = [
         up_color if close >= open_ else down_color

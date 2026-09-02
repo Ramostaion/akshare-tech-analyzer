@@ -1,5 +1,8 @@
 <style>
-  body{margin:0;background:#080d13;color:#e6edf5;font:13px Inter,"Microsoft YaHei",sans-serif;letter-spacing:0}.report-head{padding:22px 28px 16px;border-bottom:1px solid #263442;background:#0e151e}.report-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.report-title h1{margin:0;font-size:24px}.report-title span{color:#8fa0b2}.report-meta{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));gap:1px;margin-top:16px;background:#263442;border:1px solid #263442}.report-meta div{padding:10px;background:#0a1118}.report-meta small{display:block;color:#8fa0b2}.report-meta strong{display:block;margin-top:4px;font-size:15px}.report-body{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;border-bottom:1px solid #263442;background:#0e151e}.report-body section{padding:16px 20px}.report-body section+section{border-left:1px solid #263442}.report-body h2{margin:0 0 9px;font-size:13px}.report-body p,.report-body li{color:#bbc7d3;line-height:1.65}.report-body ul{margin:0;padding-left:18px}.report-extra{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #263442}.report-extra section{padding:15px 20px}.report-extra section+section{border-left:1px solid #263442}.score-table{width:100%;border-collapse:collapse}.score-table td{padding:6px;border-bottom:1px solid #263442}.score-table td:last-child{text-align:right;font-weight:700}.formula{color:#9fadb9;line-height:1.7}.audit summary{cursor:pointer;font-weight:700;list-style:none}.audit summary::before{content:"▸";margin-right:7px;color:#25b6d2}.audit[open] summary::before{content:"▾"}.audit .formula,.audit .score-table{margin-top:12px}.report-disclaimer{margin:0;padding:13px;background:#18160f;color:#d8c792;text-align:center;border-bottom:1px solid #594826}.source{color:#8fa0b2;font-size:11px;margin-top:11px}@media(max-width:800px){.report-meta{grid-template-columns:repeat(2,1fr)}.report-body,.report-extra{grid-template-columns:1fr}.report-body section+section,.report-extra section+section{border-left:0;border-top:1px solid #263442}}
+  body{margin:0;background:#080d13;color:#e6edf5;font:14px Inter,"Microsoft YaHei",sans-serif;letter-spacing:0}.report-head{padding:22px 28px 16px;border-bottom:1px solid #263442;background:#0e151e}.report-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.report-title h1{margin:0;font-size:24px}.report-title span{color:#8fa0b2}.report-meta{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));gap:1px;margin-top:16px;background:#263442;border:1px solid #263442}.report-meta div{padding:11px;background:#0a1118}.report-meta small{display:block;color:#8fa0b2;font-size:12px}.report-meta strong{display:block;margin-top:4px;font-size:16px}.report-body{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;border-bottom:1px solid #263442;background:#0e151e}.report-body section{padding:18px 20px}.report-body section+section{border-left:1px solid #263442}.report-body h2,.report-extra h2{margin:0 0 10px;font-size:16px}.report-body p,.report-body li{color:#bbc7d3;line-height:1.7}.report-body ul{margin:0;padding-left:18px}.report-extra{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #263442}.report-extra section{padding:17px 20px}.report-extra section+section{border-left:1px solid #263442}.score-table{width:100%;border-collapse:collapse}.score-table td{padding:8px;border-bottom:1px solid #263442}.score-table td:last-child{text-align:right;font-weight:700}.formula{color:#b4c1cd;line-height:1.75}.audit summary{min-height:36px;cursor:pointer;font-weight:700;list-style:none}.audit summary::before{content:"▸";margin-right:7px;color:#25b6d2}.audit[open] summary::before{content:"▾"}.audit .formula,.audit .score-table{margin-top:12px}.report-disclaimer{margin:0;padding:13px;background:#18160f;color:#d8c792;text-align:center;border-bottom:1px solid #594826}.source{color:#8fa0b2;font-size:12px;line-height:1.6;margin-top:11px}@media(max-width:800px){.report-head{padding:18px 14px}.report-meta{grid-template-columns:repeat(2,1fr)}.report-body,.report-extra{grid-template-columns:1fr}.report-body section+section,.report-extra section+section{border-left:0;border-top:1px solid #263442}}
+</style>
+<style>
+  .report-algorithm-toolbar{display:flex;align-items:center;gap:9px;padding:10px 20px;border-bottom:1px solid #263442;background:#0a1118}.report-algorithm-toolbar span{color:#8fa0b2;font-size:12px}.report-algorithm-button{min-height:38px;padding:0 13px;border:1px solid #263442;border-radius:4px;background:#121c27;color:#aebcca;cursor:pointer;font-weight:700}.report-algorithm-button.active{border-color:#3c99aa;color:#e6edf5;background:rgba(37,182,210,.12)}.report-algorithm-button[data-algorithm="gann"].active{border-color:#8b5fb0;background:rgba(192,132,252,.1)}@media(max-width:800px){.report-algorithm-toolbar{align-items:stretch;flex-wrap:wrap;padding:10px 14px}.report-algorithm-toolbar strong,.report-algorithm-toolbar span{width:100%}.report-algorithm-button{flex:1;min-height:44px}}
 </style>
 <header class="report-head">
   {% set labels = {"stock":"A股", "etf":"场内ETF", "cn_stock":"A股", "cn_etf":"场内ETF", "us_stock":"美股", "us_index":"美国指数", "global_future":"外盘期货"} %}
@@ -16,6 +19,12 @@
   <div class="source">来源：{{ market.security.data_source }} · 更新时间：{{ market.fetched_at }} · {{ "来自缓存" if market.from_cache else "本次获取" }} · 识别：{{ market.security.detection_method }} · 上游代码：{{ market.security.provider_symbol }} · 市场：{{ market.security.exchange }} · 币种：{{ market.security.currency }} · 时区：{{ market.security.timezone }} · 成交量：{{ market.volume_unit }} · 成交额：{{ market.amount_unit }}{% if market.security.series_type %} · {{ market.security.series_type }}{% endif %}</div>
   {% if market.snapshot %}<div class="source">独立快照：最新价 {{ market.snapshot.latest if market.snapshot.latest is not none else "--" }} · 数据时间 {{ market.snapshot.source_timestamp or "未知" }} · 采集时间 {{ market.snapshot.captured_at }}</div>{% endif %}
 </header>
+<div class="report-algorithm-toolbar">
+  <strong>预测算法图层</strong>
+  <button class="report-algorithm-button active" type="button" data-algorithm="wave" aria-pressed="true">波浪理论</button>
+  <button class="report-algorithm-button" type="button" data-algorithm="gann" aria-pressed="false">江恩理论</button>
+  <span>按钮只控制图形显隐，不改变分析结果。</span>
+</div>
 <div class="report-body">
   <section><h2>结论摘要</h2><p>{{ analysis.summary }}</p><p>市场状态：{{ analysis.market_regime.label }}。{{ analysis.market_regime.rationale }}</p>{% if levels.scenario %}<p>参考情景：观察区间 {{ levels.scenario.observation_lower }}–{{ levels.scenario.observation_upper }}，失效位 {{ levels.scenario.invalidation }}，目标位 {{ levels.scenario.target }}，潜在盈亏比 {{ levels.scenario.reward_risk_ratio }}。{{ levels.scenario.note }}</p>{% endif %}</section>
   <section><h2 style="color:#ff8986">偏强证据</h2><ul>{% for item in analysis.evidence.bullish %}<li>{{ item }}</li>{% else %}<li>暂无有效证据</li>{% endfor %}</ul></section>
@@ -26,24 +35,81 @@
 {% set history = quant.historical_similar if quant else {} %}
 {% set qmetrics = quant.backtest.metrics if quant and quant.backtest else {} %}
 <div class="report-extra">
-  <section><h2>Market Regime / Trading Setup</h2><div class="formula">{{ quant.market_regime.regime if quant else "INSUFFICIENT_DATA" }}；置信度 {{ "%.1f%%"|format(quant.market_regime.confidence * 100) if quant else "--" }}。<div>当前Setup：{% for item in quant.current_setups %}{{ item.setup }}{{ "（已触发）" if item.triggered else "（等待触发）" }}{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</div></div></section>
-  <section><h2>Signal / Risk Reward</h2><div class="formula">{% if signal %}Signal Quality Score：{{ signal.score }}/100（规则分，不是上涨概率）。<div>Entry：下一交易日开盘；参考 {{ signal.entry_reference }}；Stop {{ signal.stop_price or "--" }}；Target 1 {{ signal.target_1 or "--" }}；Target 2 {{ signal.target_2 or "--" }}；Reward/Risk {{ signal.reward_risk_ratio or "--" }}。</div>{% else %}当前没有已触发交易信号。{% endif %}</div></section>
+  <section><h2>市场状态与交易形态</h2><div class="formula">{{ quant.market_regime.regime if quant else "数据不足" }}；置信度 {{ "%.1f%%"|format(quant.market_regime.confidence * 100) if quant else "--" }}。<div>当前交易形态：{% for item in quant.current_setups %}{{ item.setup }}{{ "（已触发）" if item.triggered else "（等待触发）" }}{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</div></div></section>
+  <section><h2>入场、失效与目标</h2><div class="formula">{% if signal %}信号质量分：{{ signal.score }}/100（规则分，不是上涨概率）。<div>下一交易日开盘执行；参考价 {{ signal.entry_reference }}；失效位 {{ signal.stop_price or "--" }}；第一目标 {{ signal.target_1 or "--" }}；第二目标 {{ signal.target_2 or "--" }}；潜在盈亏比 {{ signal.reward_risk_ratio or "--" }}。</div>{% else %}当前没有已触发交易信号。{% endif %}</div></section>
 </div>
 <div class="report-extra">
-  <section><h2>历史类似信号统计</h2><div class="formula">样本 {{ history.sample_count or 0 }}；历史胜率 {{ history.win_rate if history.win_rate is not none else "--" }}%；Expected R {{ history.expected_r if history.expected_r is not none else "--" }}；Median MFE {{ history.median_mfe_r if history.median_mfe_r is not none else "--" }}R；Median MAE {{ history.median_mae_r if history.median_mae_r is not none else "--" }}R。<div>{{ history.note or "历史统计不代表未来收益。" }}</div></div></section>
-  <section><h2>可执行回测统计</h2><div class="formula">交易 {{ qmetrics.trade_count or 0 }}；胜率 {{ qmetrics.win_rate if qmetrics.win_rate is not none else "--" }}%；Expectancy {{ qmetrics.expectancy_r if qmetrics.expectancy_r is not none else "--" }}R；Profit Factor {{ qmetrics.profit_factor if qmetrics.profit_factor is not none else "--" }}。<div>累计收益 {{ qmetrics.cumulative_return if qmetrics.cumulative_return is not none else "--" }}%；最大回撤 {{ qmetrics.max_drawdown if qmetrics.max_drawdown is not none else "--" }}%。</div></div></section>
+  <section><h2>历史类似信号统计</h2><div class="formula">样本 {{ history.sample_count or 0 }}；历史胜率 {{ history.win_rate if history.win_rate is not none else "--" }}%；历史期望 {{ history.expected_r if history.expected_r is not none else "--" }}R；有利波动中位数 {{ history.median_mfe_r if history.median_mfe_r is not none else "--" }}R；不利波动中位数 {{ history.median_mae_r if history.median_mae_r is not none else "--" }}R。<div>{{ history.note or "历史统计不代表未来收益。" }}</div></div></section>
+  <section><h2>按执行规则回测</h2><div class="formula">交易 {{ qmetrics.trade_count or 0 }}；胜率 {{ qmetrics.win_rate if qmetrics.win_rate is not none else "--" }}%；每笔期望 {{ qmetrics.expectancy_r if qmetrics.expectancy_r is not none else "--" }}R；盈亏因子 {{ qmetrics.profit_factor if qmetrics.profit_factor is not none else "--" }}。<div>累计收益 {{ qmetrics.cumulative_return if qmetrics.cumulative_return is not none else "--" }}%；最大回撤 {{ qmetrics.max_drawdown if qmetrics.max_drawdown is not none else "--" }}%。</div></div></section>
 </div>
 <div class="report-extra">
   <section><details class="audit"><summary>Factor Snapshot（高级审计数据）</summary><div class="formula">{% for name, value in quant.factor_snapshot.items() %}<div>{{ name }}：{{ value if value is not none else "--" }}</div>{% endfor %}</div></details></section>
   {% set wave_labels = {"impulse":"推动五浪", "unfinished_impulse":"未完成推动浪", "abc_zigzag":"ABC 锯齿调整", "unfinished_abc":"未完成 ABC 调整"} %}
   <section><h2>浪形候选与后市情景</h2><div class="formula">{% for candidate in quant.wave.candidates %}{% set validation = candidate.historical_validation|default({}) %}<div>候选{{ loop.index }}：{{ wave_labels.get(candidate.pattern, candidate.pattern) }}（{{ "上行" if candidate.direction == "up" else "下行" }}），{{ "进行中" if candidate.status == "developing" else "已完成" }}，{{ candidate.scale or "标准尺度" }}，{{ candidate.current_state_label }}，结构匹配度 {{ "%.1f/100"|format((candidate.structural_fit if candidate.structural_fit is defined else candidate.confidence) * 100) }}（非概率）。<div>确认门槛：{{ candidate.projection.confirmation_label or "路径确认位" }} {{ candidate.projection.confirmation if candidate.projection.confirmation is not none else "--" }}；情景 1：确认后向 {{ candidate.projection.target_label or "条件目标观察区" }} {{ candidate.projection.primary_zone|join("–") }} 推进；情景 2：确认尝试失败后转向 {{ candidate.projection.invalidation_label or "候选失效位" }} {{ candidate.projection.invalidation if candidate.projection.invalidation is not none else "--" }}。{% if candidate.current_state == "waiting" %}<div>情景 3：确认位与失效位之间震荡，候选保持观察。</div>{% endif %}</div><div>{% if validation.calibrated %}历史逐根回放：已决样本 {{ validation.resolved_count }} 次，情景 1 目标先达率 {{ validation.target_first_rate }}%，目标中位用时 {{ validation.median_target_bars }} 根 K 线。{% else %}历史逐根回放：同类样本 {{ validation.sample_count|default(0) }} 次、已决 {{ validation.resolved_count|default(0) }} 次；样本不足，暂不展示概率。{% endif %}</div></div>{% else %}<div>暂无通过硬规则的候选浪型。</div>{% endfor %}<div>{{ quant.wave.note if quant else "" }}</div></div></section>
 </div>
+{% set gann = quant.gann if quant and quant.gann is defined else {} %}
+<div class="report-extra">
+  <section><h2>江恩结构与后市情景</h2><div class="formula">{% if gann.status == "active" %}自动结构锚点：{{ gann.anchor.timestamp }}，价格 {{ gann.anchor.price }}，于 {{ gann.anchor.confirmed_at }} 完成右侧确认。<div>方向：{{ "上行" if gann.direction == "up" else "下行" }}；状态：{{ gann.current_state_label }}；尺度：{{ gann.scale.method }}。</div><div>收盘确认位 {{ gann.confirmation }}；结构失效位 {{ gann.invalidation }}。</div><div>{{ gann.note }}</div>{% else %}{{ gann.note or "暂无足够的已确认高低点。" }}{% endif %}</div></section>
+  <section><h2>江恩历史逐根回放</h2><div class="formula">{% if gann.status == "active" %}{% set validation = gann.historical_validation %}样本 {{ validation.sample_count or 0 }}；已决 {{ validation.resolved_count or 0 }}。{% if validation.calibrated %}<div>目标先达率 {{ validation.target_first_rate }}%；目标中位用时 {{ validation.median_target_bars }} 根 K 线。</div>{% else %}<div>已决样本不足 30 次，暂不展示概率。</div>{% endif %}{% else %}暂无可回放结构。{% endif %}</div></section>
+</div>
 <div class="report-extra">
   <section><h2>评分构成</h2><table class="score-table">{% for component in analysis.components.values() %}<tr><td>{{ component.name }}</td><td>{{ component.score }}/100</td></tr>{% endfor %}</table></section>
   <section><details class="audit"><summary>指标公式与数据说明</summary><div class="formula">{% for item in analysis.formula_notes %}<div>{{ item }}</div>{% endfor %}</div></details></section>
 </div>
 <div class="report-extra">
-  <section><h2>历史信号回测</h2><div class="formula">{{ analysis.backtest.method }}；共{{ analysis.backtest.signals }}次信号；成本{{ analysis.backtest.cost_rate }}%。{% for horizon, result in analysis.backtest.results.items() %}<div>{{ horizon }}根：样本{{ result.all.samples }}，胜率{{ result.all.win_rate if result.all.win_rate is not none else "--" }}%，平均收益{{ result.all.average_return if result.all.average_return is not none else "--" }}%。</div>{% endfor %}</div></section>
+  <section><h2>技术条件历史表现</h2><div class="formula">{{ analysis.backtest.method }}；共{{ analysis.backtest.signals }}次信号；成本{{ analysis.backtest.cost_rate }}%。{% for horizon, result in analysis.backtest.results.items() %}<div>{{ horizon }}根：样本{{ result.all.samples }}，胜率{{ result.all.win_rate if result.all.win_rate is not none else "--" }}%，平均收益{{ result.all.average_return if result.all.average_return is not none else "--" }}%。</div>{% endfor %}</div></section>
   <section><details class="audit"><summary>缓存与数据质量</summary><div class="formula">模式：{{ market.cache_status.mode }}；覆盖：{{ market.cache_status.coverage_start or "--" }} 至 {{ market.cache_status.coverage_end or "--" }}；本次新增{{ market.cache_status.new_rows or 0 }}根。<div>质量：{{ market.data_quality.status }}；有效K线{{ market.data_quality.rows }}根。</div></div></details></section>
 </div>
 <p class="report-disclaimer">仅为算法技术分析结果，不构成投资建议。历史统计不代表未来收益，信号仅为算法研究结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。报告生成时间：{{ generated_at }}</p>
+<script>
+  window.addEventListener("load", () => {
+    const graph = document.querySelector(".plotly-graph-div");
+    const buttons = document.querySelectorAll(".report-algorithm-button");
+    if (!graph || !window.Plotly) return;
+    const visibility = {wave: true, gann: false};
+    const fitPredictionView = () => {
+      const update = {"yaxis.autorange": true};
+      const layout = graph._fullLayout || graph.layout || {};
+      const xAxes = Object.keys(layout).filter((key) => /^xaxis\d*$/.test(key));
+      (xAxes.length ? xAxes : ["xaxis"]).forEach((axis) => {
+        update[`${axis}.autorange`] = true;
+      });
+      return Plotly.relayout(graph, update);
+    };
+    const apply = (algorithm, fitView = false) => {
+      const enabled = visibility[algorithm];
+      const indices = [...(graph.data || [])]
+        .map((trace, index) => trace.meta?.algorithm === algorithm ? index : -1)
+        .filter((index) => index >= 0);
+      const operations = [];
+      if (indices.length) operations.push(Plotly.restyle(graph, {visible: enabled}, indices));
+      const update = {};
+      [...(graph.layout.shapes || [])].forEach((shape, index) => {
+        if (String(shape.name || "").startsWith(`algorithm-${algorithm}`)) {
+          update[`shapes[${index}].visible`] = enabled;
+        }
+      });
+      [...(graph.layout.annotations || [])].forEach((annotation, index) => {
+        if (String(annotation.name || "").startsWith(`algorithm-${algorithm}`)) {
+          update[`annotations[${index}].visible`] = enabled;
+        }
+      });
+      if (Object.keys(update).length) operations.push(Plotly.relayout(graph, update));
+      return Promise.all(operations).then(() => {
+        if (algorithm === "gann" && enabled && fitView) {
+          return fitPredictionView();
+        }
+        return undefined;
+      });
+    };
+    buttons.forEach((button) => button.addEventListener("click", () => {
+      const algorithm = button.dataset.algorithm;
+      visibility[algorithm] = !visibility[algorithm];
+      button.classList.toggle("active", visibility[algorithm]);
+      button.setAttribute("aria-pressed", String(visibility[algorithm]));
+      apply(algorithm, true);
+    }));
+    apply("wave");
+    apply("gann");
+  });
+</script>

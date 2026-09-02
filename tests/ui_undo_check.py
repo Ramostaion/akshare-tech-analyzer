@@ -43,10 +43,29 @@ def main() -> None:
         page.keyboard.press("Control+z")
         page.wait_for_timeout(150)
         undone = page.evaluate("document.querySelector('.plotly-graph-div').layout.shapes.length")
+        layer_result = None
+        if page.locator(".report-algorithm-button").count() >= 2:
+            page.locator('[data-algorithm="gann"]').click()
+            page.locator('[data-algorithm="wave"]').click()
+            page.wait_for_timeout(200)
+            layer_result = page.evaluate(
+                """() => {
+                  const graph = document.querySelector('.plotly-graph-div');
+                  const traces = [...(graph.data || [])];
+                  return {
+                    gannVisible: traces.filter((trace) => trace.meta?.algorithm === 'gann')
+                      .every((trace) => trace.visible === true),
+                    waveHidden: traces.filter((trace) => trace.meta?.algorithm === 'wave')
+                      .every((trace) => trace.visible === false),
+                  };
+                }"""
+            )
         browser.close()
 
     if drawn != initial + 1 or undone != initial:
         raise SystemExit(f"撤销检查失败: initial={initial}, drawn={drawn}, undone={undone}")
+    if layer_result and not all(layer_result.values()):
+        raise SystemExit(f"离线算法图层检查失败: {layer_result}")
     print(f"撤销检查通过: initial={initial}, drawn={drawn}, undone={undone}")
 
 

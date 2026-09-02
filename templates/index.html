@@ -27,29 +27,33 @@
         </label>
         <label><span>市场 / 资产</span><select id="asset-type" name="asset_type"><option value="auto">A股/ETF 自动识别</option><option value="cn_stock">A股</option><option value="cn_etf">场内ETF</option><option value="us_stock">美股</option><option value="us_index">美国指数</option><option value="global_future">外盘期货</option></select></label>
         <label><span>周期</span><select id="period" name="period"><option value="daily">日线</option><option value="weekly">周线</option><option value="monthly">月线</option><option value="1m">1分钟</option><option value="5m">5分钟</option><option value="15m">15分钟</option><option value="30m">30分钟</option><option value="60m">60分钟</option></select></label>
-        <label><span>复权</span><select id="adjust" name="adjust"><option value="qfq">前复权</option><option value="hfq">后复权</option><option value="none">不复权</option></select></label>
-        <label><span>开始日期</span><input id="start" name="start" type="date" required></label>
-        <label><span>结束日期</span><input id="end" name="end" type="date" required></label>
-        <div class="indicator-field">
-          <span>图表叠加</span>
-          <div class="toggle-row">
-            <label class="toggle"><input id="show-ma" type="checkbox" checked><span>MA</span></label>
-            <label class="toggle"><input id="show-boll" type="checkbox" checked><span>BOLL</span></label>
-            <label class="toggle"><input id="show-levels" type="checkbox" checked><span>关键位</span></label>
-            <label class="toggle"><input id="show-kdj" type="checkbox"><span>KDJ</span></label>
-          </div>
-        </div>
-        <div class="refresh-field">
-          <span>自动刷新</span>
-          <div class="refresh-controls">
-            <label class="switch" title="开启自动刷新"><input id="auto-refresh" type="checkbox"><i></i></label>
-            <select id="refresh-interval" disabled aria-label="刷新间隔"><option value="60">60秒</option><option value="120">2分钟</option><option value="300">5分钟</option></select>
-          </div>
-        </div>
         <div class="actions">
           <button id="analyze-button" class="primary" type="submit"><span class="button-icon">▶</span><span>开始分析</span></button>
-          <a id="download-button" class="secondary disabled" aria-disabled="true" download><span class="download-icon">↓</span><span>下载离线HTML</span></a>
         </div>
+        <details class="parameter-details">
+          <summary>高级参数 <span>日期、复权、图表与刷新</span></summary>
+          <div class="advanced-parameters">
+            <label><span>复权</span><select id="adjust" name="adjust"><option value="qfq">前复权</option><option value="hfq">后复权</option><option value="none">不复权</option></select></label>
+            <label><span>开始日期</span><input id="start" name="start" type="date" required></label>
+            <label><span>结束日期</span><input id="end" name="end" type="date" required></label>
+            <div class="indicator-field">
+              <span>图表叠加</span>
+              <div class="toggle-row">
+                <label class="toggle"><input id="show-ma" type="checkbox" checked><span>MA</span></label>
+                <label class="toggle"><input id="show-boll" type="checkbox" checked><span>BOLL</span></label>
+                <label class="toggle"><input id="show-levels" type="checkbox" checked><span>关键位</span></label>
+                <label class="toggle"><input id="show-kdj" type="checkbox"><span>KDJ</span></label>
+              </div>
+            </div>
+            <div class="refresh-field">
+              <span>自动刷新</span>
+              <div class="refresh-controls">
+                <label class="switch" title="开启自动刷新"><input id="auto-refresh" type="checkbox"><i></i></label>
+                <select id="refresh-interval" disabled aria-label="刷新间隔"><option value="60">60秒</option><option value="120">2分钟</option><option value="300">5分钟</option></select>
+              </div>
+            </div>
+          </div>
+        </details>
         <div id="quick-instruments" class="quick-instruments" aria-label="常用代码"></div>
       </form>
     </section>
@@ -58,7 +62,10 @@
 
     <section id="result" class="result hidden">
       <div class="instrument-strip">
-        <div class="instrument-title"><span id="security-code"></span><strong id="security-name"></strong><span id="asset-badge" class="badge"></span><button id="favorite-button" class="favorite-button" type="button" title="加入常用" aria-label="加入常用">☆</button></div>
+        <div class="instrument-header">
+          <div class="instrument-title"><span id="security-code"></span><strong id="security-name"></strong><span id="asset-badge" class="badge"></span><button id="favorite-button" class="favorite-button" type="button" title="加入常用" aria-label="加入常用">☆</button></div>
+          <a id="download-button" class="secondary disabled" aria-disabled="true" download><span class="download-icon">↓</span><span>下载离线报告</span></a>
+        </div>
         <dl class="metrics">
           <div><dt>最新价</dt><dd id="latest-price">--</dd></div>
           <div><dt>涨跌幅</dt><dd id="pct-change">--</dd></div>
@@ -73,22 +80,20 @@
         <div id="snapshot-line" class="data-line hidden"></div>
       </div>
 
-      <div id="chart" class="chart-shell"></div>
-
-      <div class="analysis-grid">
+      <div class="analysis-grid decision-grid">
         <section class="summary-panel">
-          <div class="panel-heading"><h2>技术状态</h2></div>
+          <div class="panel-heading"><h2>当前结论与交易计划</h2><span class="score-caption">技术状态评分</span></div>
           <div class="signal-overview">
             <div class="signal-score-row">
               <div class="signal-score-track"><i id="technical-score-fill"></i></div>
               <strong id="score-ring">--</strong>
             </div>
             <dl class="signal-facts">
-              <div><dt>当前 Setup</dt><dd id="overview-setup">暂无</dd></div>
-              <div><dt>买点质量</dt><dd><span class="signal-score-track"><i id="signal-score-fill"></i></span><strong id="overview-signal-score">--</strong></dd></div>
+              <div><dt>当前交易形态</dt><dd id="overview-setup">暂无</dd></div>
+              <div><dt>信号质量</dt><dd><span class="signal-score-track"><i id="signal-score-fill"></i></span><strong id="overview-signal-score">--</strong></dd></div>
               <div><dt>历史类似信号</dt><dd id="overview-samples">0 次</dd></div>
               <div><dt>成功率</dt><dd id="overview-win-rate">--</dd></div>
-              <div><dt>Expected R</dt><dd id="overview-expected-r">--</dd></div>
+              <div><dt>历史期望 R</dt><dd id="overview-expected-r">--</dd></div>
             </dl>
             <div class="signal-divider"></div>
             <dl class="trade-plan">
@@ -102,9 +107,21 @@
           <p id="summary" class="state-summary"></p>
           <div id="scenario" class="scenario hidden"></div>
         </section>
+        <section class="evidence-panel warning"><h2>首要风险</h2><ul id="warning-list"></ul></section>
+      </div>
+
+      <div class="algorithm-toolbar" aria-label="预测算法图层">
+        <strong>预测算法图层</strong>
+        <button class="algorithm-toggle active" type="button" data-algorithm="wave" aria-pressed="true"><i></i>波浪理论</button>
+        <button class="algorithm-toggle" type="button" data-algorithm="gann" aria-pressed="false"><i></i>江恩理论</button>
+        <span>按钮只控制图形显隐，不会重新计算或重置缩放</span>
+      </div>
+
+      <div id="chart" class="chart-shell"></div>
+
+      <div class="evidence-grid">
         <section class="evidence-panel bullish"><h2>偏强证据</h2><ul id="bullish-list"></ul></section>
         <section class="evidence-panel bearish"><h2>偏弱证据</h2><ul id="bearish-list"></ul></section>
-        <section class="evidence-panel warning"><h2>风险提示</h2><ul id="warning-list"></ul></section>
       </div>
 
       <div class="detail-grid">
@@ -124,7 +141,7 @@
       </div>
       <div class="insight-grid">
         <section>
-          <h2>历史信号回测</h2>
+          <h2>技术条件历史表现</h2>
           <p id="backtest-summary" class="detail-note"></p>
           <div id="backtest-results" class="backtest-results"></div>
         </section>
@@ -135,34 +152,44 @@
           </details>
         </section>
       </div>
-      <div class="insight-grid quant-grid">
-        <section>
-          <h2>量化 Setup 与 Signal</h2>
-          <div id="quant-signal" class="quality-summary"></div>
-        </section>
-        <section>
-          <h2>Entry / Stop / Target</h2>
-          <div id="quant-risk" class="quality-summary"></div>
-        </section>
+      <div class="insight-grid quant-grid validation-grid">
         <section>
           <h2>历史类似信号统计</h2>
           <div id="quant-history" class="quality-summary"></div>
         </section>
         <section>
+          <h2>按执行规则回测</h2>
+          <div id="quant-backtest" class="quality-summary"></div>
+        </section>
+      </div>
+      <div class="insight-grid algorithm-detail-grid">
+        <section>
           <h2>浪形候选与后市情景</h2>
           <div id="wave-candidates" class="quality-summary"></div>
+        </section>
+        <section>
+          <h2>江恩结构与后市情景</h2>
+          <div id="gann-analysis" class="quality-summary"></div>
         </section>
       </div>
       <div class="insight-grid quant-grid">
         <section>
-          <details class="audit-details factor-details">
-            <summary>Factor Snapshot <span>高级数据</span></summary>
-            <div id="factor-snapshot" class="indicator-list"></div>
+          <details class="audit-details quant-details">
+            <summary>量化规则明细 <span>市场状态与执行参数</span></summary>
+            <div class="quant-audit-grid">
+              <div><h3>市场状态与交易形态</h3><div id="quant-signal" class="quality-summary"></div></div>
+              <div><h3>入场、失效与目标</h3><div id="quant-risk" class="quality-summary"></div></div>
+            </div>
           </details>
         </section>
+        <section><h2>算法说明</h2><p class="detail-note">预测线均为带确认与失效条件的结构情景，不是确定价格或时间预测。</p></section>
+      </div>
+      <div class="insight-grid audit-grid">
         <section>
-          <h2>可执行回测统计</h2>
-          <div id="quant-backtest" class="quality-summary"></div>
+          <details class="audit-details factor-details">
+            <summary>Factor Snapshot <span>高级审计数据</span></summary>
+            <div id="factor-snapshot" class="indicator-list"></div>
+          </details>
         </section>
       </div>
       <p class="disclaimer">历史统计不代表未来收益，信号仅为算法研究结果，不构成投资建议。行情由第三方数据源提供，可能存在延迟、缺失或误差。</p>
