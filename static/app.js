@@ -21,7 +21,7 @@ let suggestionTimer = null;
 let currentInstrument = null;
 let contextFavorite = null;
 let renderedChartContext = null;
-const algorithmVisibility = { wave: true, gann: false };
+const algorithmVisibility = { wave: true, gann: false, wyckoff: false };
 
 const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
 const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
@@ -377,6 +377,30 @@ function renderGann(gann) {
   ]);
 }
 
+function renderWyckoff(wyckoff) {
+  if (!wyckoff || wyckoff.status !== "active") {
+    renderRows("#wyckoff-analysis", [wyckoff?.note || "暂无可确认的威科夫量价结构。"]);
+    return;
+  }
+  const range = wyckoff.range || {};
+  const projection = wyckoff.projection || {};
+  const history = wyckoff.historical_validation || {};
+  const structure = wyckoff.structure === "accumulation" ? "吸筹候选" : "派发候选";
+  const events = (wyckoff.events || []).map((item) => item.event).join(" → ");
+  renderRows("#wyckoff-analysis", [
+    `${structure} · Phase ${wyckoff.phase || "--"} · 当前事件：${wyckoff.current_event || "--"}`,
+    `结构匹配度：${number((wyckoff.structural_fit || 0) * 100, 1)}/100（非概率）`,
+    `交易区间：${number(range.support, 3)}–${number(range.resistance, 3)}`,
+    `近期事件：${events || "尚无关键事件"}`,
+    `确认位：${number(projection.confirmation, 3)} · 失效位：${number(projection.invalidation, 3)}`,
+    `目标观察区：${(projection.target_zone || []).map((value) => number(value, 3)).join("–")}`,
+    history.calibrated
+      ? `历史目标先达率：${number(history.target_first_rate, 1)}% · 样本${history.sample_count}`
+      : `历史回放：已决${history.resolved_count || 0}次，少于30次不展示概率`,
+    wyckoff.note,
+  ]);
+}
+
 function priceText(value, currency) {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   const symbols = { CNY: "¥", USD: "$", HKD: "HK$", EUR: "€", JPY: "¥" };
@@ -449,6 +473,7 @@ function renderQuant(quant, security) {
   const wave = quant?.wave || {};
   renderWaveCandidates(wave);
   renderGann(quant?.gann || {});
+  renderWyckoff(quant?.wyckoff || {});
   const factorTarget = document.querySelector("#factor-snapshot");
   factorTarget.replaceChildren();
   Object.entries(quant?.factor_snapshot || {}).forEach(([name, value]) => {
@@ -503,17 +528,7 @@ function updateAlgorithmButtons() {
   });
 }
 
-function fitPredictionView(graph) {
-  const update = { "yaxis.autorange": true };
-  const layout = graph?._fullLayout || graph?.layout || {};
-  const xAxes = Object.keys(layout).filter((key) => /^xaxis\d*$/.test(key));
-  (xAxes.length ? xAxes : ["xaxis"]).forEach((axis) => {
-    update[`${axis}.autorange`] = true;
-  });
-  return window.Plotly.relayout(graph, update);
-}
-
-function setAlgorithmLayer(graph, algorithm, enabled, fitView = false) {
+function setAlgorithmLayer(graph, algorithm, enabled) {
   if (!graph || !window.Plotly) return Promise.resolve();
   const traceIndices = [...(graph.data || [])]
     .map((trace, index) => trace.meta?.algorithm === algorithm ? index : -1)
@@ -534,12 +549,7 @@ function setAlgorithmLayer(graph, algorithm, enabled, fitView = false) {
   const operations = [];
   if (traceIndices.length) operations.push(window.Plotly.restyle(graph, { visible: enabled }, traceIndices));
   if (Object.keys(layoutUpdate).length) operations.push(window.Plotly.relayout(graph, layoutUpdate));
-  return Promise.all(operations).then(() => {
-    if (algorithm === "gann" && enabled && fitView) {
-      return fitPredictionView(graph);
-    }
-    return undefined;
-  }).finally(() => {
+  return Promise.all(operations).finally(() => {
     if (undoState) undoState.applying = false;
   });
 }
@@ -568,7 +578,6 @@ algorithmButtons.forEach((button) => {
       document.querySelector("#chart .plotly-graph-div"),
       algorithm,
       algorithmVisibility[algorithm],
-      true,
     );
   });
 });

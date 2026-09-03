@@ -71,6 +71,18 @@ def main() -> None:
                     .flatMap((trace) => [...(trace.x || [])]
                       .map((value) => new Date(value).getTime())))
                     <= new Date(graph?._fullLayout?.xaxis?.range?.[1]).getTime(),
+                  gannTrendPixels: Math.min(...traces
+                    .filter((trace) => String(trace.name || '').startsWith('江恩后续趋势'))
+                    .map((trace) => Math.abs(
+                      graph._fullLayout.xaxis.d2p(trace.x.at(-1))
+                      - graph._fullLayout.xaxis.d2p(trace.x[0])
+                    ))),
+                  waveScenarioPixels: Math.min(...traces
+                    .filter((trace) => String(trace.name || '').startsWith('浪形情景'))
+                    .map((trace) => Math.abs(
+                      graph._fullLayout.xaxis.d2p(trace.x.at(-1))
+                      - graph._fullLayout.xaxis.d2p(trace.x[0])
+                    ))),
                   };
                 }
                 """
@@ -93,6 +105,9 @@ def main() -> None:
         assert result["waveHidden"]
         assert result["waveShapesHidden"]
         assert result["gannTrendInRange"]
+        minimum_pixels = 48 if result["viewport"] == "desktop" else 24
+        assert result["gannTrendPixels"] >= minimum_pixels
+        assert result["waveScenarioPixels"] >= minimum_pixels
         assert not result["overflow"]
         assert not result["errors"]
 

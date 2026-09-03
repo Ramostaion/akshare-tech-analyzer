@@ -154,6 +154,22 @@ def _payload() -> dict[str, object]:
                 },
                 "note": "角线采用 ATR 归一化。",
             },
+            "wyckoff": {
+                "status": "active",
+                "structure": "accumulation",
+                "phase": "C",
+                "current_event": "Spring",
+                "structural_fit": 0.76,
+                "range": {"support": 11.9, "resistance": 12.8},
+                "events": [{"event": "Spring"}],
+                "projection": {
+                    "confirmation": 12.8,
+                    "invalidation": 11.7,
+                    "target_zone": [13.25, 13.7],
+                },
+                "historical_validation": {"resolved_count": 8, "calibrated": False},
+                "note": "威科夫量价结构候选。",
+            },
         },
         "chart_html": (
             '<div class="plotly-graph-div" style="height:420px"></div>'
@@ -161,7 +177,8 @@ def _payload() -> dict[str, object]:
             "g._fullLayout={xaxis:{matches:'x4'},xaxis2:{matches:'x4'},xaxis4:{}};"
             "g.layout={shapes:[],annotations:[]};"
             "g.data=[{meta:{algorithm:'wave'},visible:true},"
-            "{meta:{algorithm:'gann'},visible:false}];})();</script>"
+            "{meta:{algorithm:'gann'},visible:false},"
+            "{meta:{algorithm:'wyckoff'},visible:false}];})();</script>"
         ),
         "download_url": "/api/report/offline/download",
     }
@@ -195,6 +212,7 @@ def main() -> None:
             assert page.locator("#overview-setup").inner_text() == "趋势回踩确认"
             assert "¥12.18" in page.locator("#overview-entry-zone").inner_text()
             assert "自动结构锚点" in page.locator("#gann-analysis").inner_text()
+            assert "吸筹候选" in page.locator("#wyckoff-analysis").inner_text()
             layout = page.evaluate(
                 """() => ({
                   decisionTop: document.querySelector('.decision-grid').getBoundingClientRect().top,
@@ -242,22 +260,29 @@ def main() -> None:
             )
             wave_button = page.locator('[data-algorithm="wave"]')
             gann_button = page.locator('[data-algorithm="gann"]')
+            wyckoff_button = page.locator('[data-algorithm="wyckoff"]')
             assert wave_button.get_attribute("aria-pressed") == "true"
             assert gann_button.get_attribute("aria-pressed") == "false"
+            assert wyckoff_button.get_attribute("aria-pressed") == "false"
             gann_button.click()
             wave_button.click()
+            wyckoff_button.click()
             assert gann_button.get_attribute("aria-pressed") == "true"
             assert wave_button.get_attribute("aria-pressed") == "false"
-            page.wait_for_function(
-                "document.querySelector('#chart .plotly-graph-div')"
-                ".__algorithmRelayouts?.some((item) => item['xaxis.autorange'] === true"
-                " && item['xaxis4.autorange'] === true && item['yaxis.autorange'] === true)"
+            assert wyckoff_button.get_attribute("aria-pressed") == "true"
+            algorithm_relayouts = page.evaluate(
+                "document.querySelector('#chart .plotly-graph-div').__algorithmRelayouts || []"
+            )
+            assert not any(
+                "range" in key or "autorange" in key
+                for update in algorithm_relayouts
+                for key in update
             )
             visibility = page.evaluate(
                 "document.querySelector('#chart .plotly-graph-div').data"
                 ".map((trace) => trace.visible)"
             )
-            assert visibility == [False, True]
+            assert visibility == [False, True, True]
             assert not page.locator(".factor-details").get_attribute("open")
             audit_sections = page.locator(".audit-details")
             assert audit_sections.count() >= 4

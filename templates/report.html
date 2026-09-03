@@ -2,7 +2,7 @@
   body{margin:0;background:#080d13;color:#e6edf5;font:14px Inter,"Microsoft YaHei",sans-serif;letter-spacing:0}.report-head{padding:22px 28px 16px;border-bottom:1px solid #263442;background:#0e151e}.report-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.report-title h1{margin:0;font-size:24px}.report-title span{color:#8fa0b2}.report-meta{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));gap:1px;margin-top:16px;background:#263442;border:1px solid #263442}.report-meta div{padding:11px;background:#0a1118}.report-meta small{display:block;color:#8fa0b2;font-size:12px}.report-meta strong{display:block;margin-top:4px;font-size:16px}.report-body{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;border-bottom:1px solid #263442;background:#0e151e}.report-body section{padding:18px 20px}.report-body section+section{border-left:1px solid #263442}.report-body h2,.report-extra h2{margin:0 0 10px;font-size:16px}.report-body p,.report-body li{color:#bbc7d3;line-height:1.7}.report-body ul{margin:0;padding-left:18px}.report-extra{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #263442}.report-extra section{padding:17px 20px}.report-extra section+section{border-left:1px solid #263442}.score-table{width:100%;border-collapse:collapse}.score-table td{padding:8px;border-bottom:1px solid #263442}.score-table td:last-child{text-align:right;font-weight:700}.formula{color:#b4c1cd;line-height:1.75}.audit summary{min-height:36px;cursor:pointer;font-weight:700;list-style:none}.audit summary::before{content:"▸";margin-right:7px;color:#25b6d2}.audit[open] summary::before{content:"▾"}.audit .formula,.audit .score-table{margin-top:12px}.report-disclaimer{margin:0;padding:13px;background:#18160f;color:#d8c792;text-align:center;border-bottom:1px solid #594826}.source{color:#8fa0b2;font-size:12px;line-height:1.6;margin-top:11px}@media(max-width:800px){.report-head{padding:18px 14px}.report-meta{grid-template-columns:repeat(2,1fr)}.report-body,.report-extra{grid-template-columns:1fr}.report-body section+section,.report-extra section+section{border-left:0;border-top:1px solid #263442}}
 </style>
 <style>
-  .report-algorithm-toolbar{display:flex;align-items:center;gap:9px;padding:10px 20px;border-bottom:1px solid #263442;background:#0a1118}.report-algorithm-toolbar span{color:#8fa0b2;font-size:12px}.report-algorithm-button{min-height:38px;padding:0 13px;border:1px solid #263442;border-radius:4px;background:#121c27;color:#aebcca;cursor:pointer;font-weight:700}.report-algorithm-button.active{border-color:#3c99aa;color:#e6edf5;background:rgba(37,182,210,.12)}.report-algorithm-button[data-algorithm="gann"].active{border-color:#8b5fb0;background:rgba(192,132,252,.1)}@media(max-width:800px){.report-algorithm-toolbar{align-items:stretch;flex-wrap:wrap;padding:10px 14px}.report-algorithm-toolbar strong,.report-algorithm-toolbar span{width:100%}.report-algorithm-button{flex:1;min-height:44px}}
+  .report-algorithm-toolbar{display:flex;align-items:center;gap:9px;padding:10px 20px;border-bottom:1px solid #263442;background:#0a1118}.report-algorithm-toolbar span{color:#8fa0b2;font-size:12px}.report-algorithm-button{min-height:38px;padding:0 13px;border:1px solid #263442;border-radius:4px;background:#121c27;color:#aebcca;cursor:pointer;font-weight:700}.report-algorithm-button.active{border-color:#3c99aa;color:#e6edf5;background:rgba(37,182,210,.12)}.report-algorithm-button[data-algorithm="gann"].active{border-color:#8b5fb0;background:rgba(192,132,252,.1)}.report-algorithm-button[data-algorithm="wyckoff"].active{border-color:#b7791f;background:rgba(250,204,21,.1)}@media(max-width:800px){.report-algorithm-toolbar{align-items:stretch;flex-wrap:wrap;padding:10px 14px}.report-algorithm-toolbar strong,.report-algorithm-toolbar span{width:100%}.report-algorithm-button{flex:1;min-height:44px}}
 </style>
 <header class="report-head">
   {% set labels = {"stock":"A股", "etf":"场内ETF", "cn_stock":"A股", "cn_etf":"场内ETF", "us_stock":"美股", "us_index":"美国指数", "global_future":"外盘期货"} %}
@@ -23,6 +23,7 @@
   <strong>预测算法图层</strong>
   <button class="report-algorithm-button active" type="button" data-algorithm="wave" aria-pressed="true">波浪理论</button>
   <button class="report-algorithm-button" type="button" data-algorithm="gann" aria-pressed="false">江恩理论</button>
+  <button class="report-algorithm-button" type="button" data-algorithm="wyckoff" aria-pressed="false">威科夫理论</button>
   <span>按钮只控制图形显隐，不改变分析结果。</span>
 </div>
 <div class="report-body">
@@ -48,9 +49,11 @@
   <section><h2>浪形候选与后市情景</h2><div class="formula">{% for candidate in quant.wave.candidates %}{% set validation = candidate.historical_validation|default({}) %}<div>候选{{ loop.index }}：{{ wave_labels.get(candidate.pattern, candidate.pattern) }}（{{ "上行" if candidate.direction == "up" else "下行" }}），{{ "进行中" if candidate.status == "developing" else "已完成" }}，{{ candidate.scale or "标准尺度" }}，{{ candidate.current_state_label }}，结构匹配度 {{ "%.1f/100"|format((candidate.structural_fit if candidate.structural_fit is defined else candidate.confidence) * 100) }}（非概率）。<div>确认门槛：{{ candidate.projection.confirmation_label or "路径确认位" }} {{ candidate.projection.confirmation if candidate.projection.confirmation is not none else "--" }}；情景 1：确认后向 {{ candidate.projection.target_label or "条件目标观察区" }} {{ candidate.projection.primary_zone|join("–") }} 推进；情景 2：确认尝试失败后转向 {{ candidate.projection.invalidation_label or "候选失效位" }} {{ candidate.projection.invalidation if candidate.projection.invalidation is not none else "--" }}。{% if candidate.current_state == "waiting" %}<div>情景 3：确认位与失效位之间震荡，候选保持观察。</div>{% endif %}</div><div>{% if validation.calibrated %}历史逐根回放：已决样本 {{ validation.resolved_count }} 次，情景 1 目标先达率 {{ validation.target_first_rate }}%，目标中位用时 {{ validation.median_target_bars }} 根 K 线。{% else %}历史逐根回放：同类样本 {{ validation.sample_count|default(0) }} 次、已决 {{ validation.resolved_count|default(0) }} 次；样本不足，暂不展示概率。{% endif %}</div></div>{% else %}<div>暂无通过硬规则的候选浪型。</div>{% endfor %}<div>{{ quant.wave.note if quant else "" }}</div></div></section>
 </div>
 {% set gann = quant.gann if quant and quant.gann is defined else {} %}
+{% set wyckoff = quant.wyckoff if quant and quant.wyckoff is defined else {} %}
 <div class="report-extra">
   <section><h2>江恩结构与后市情景</h2><div class="formula">{% if gann.status == "active" %}自动结构锚点：{{ gann.anchor.timestamp }}，价格 {{ gann.anchor.price }}，于 {{ gann.anchor.confirmed_at }} 完成右侧确认。<div>方向：{{ "上行" if gann.direction == "up" else "下行" }}；状态：{{ gann.current_state_label }}；尺度：{{ gann.scale.method }}。</div><div>收盘确认位 {{ gann.confirmation }}；结构失效位 {{ gann.invalidation }}。</div><div>{{ gann.note }}</div>{% else %}{{ gann.note or "暂无足够的已确认高低点。" }}{% endif %}</div></section>
   <section><h2>江恩历史逐根回放</h2><div class="formula">{% if gann.status == "active" %}{% set validation = gann.historical_validation %}样本 {{ validation.sample_count or 0 }}；已决 {{ validation.resolved_count or 0 }}。{% if validation.calibrated %}<div>目标先达率 {{ validation.target_first_rate }}%；目标中位用时 {{ validation.median_target_bars }} 根 K 线。</div>{% else %}<div>已决样本不足 30 次，暂不展示概率。</div>{% endif %}{% else %}暂无可回放结构。{% endif %}</div></section>
+  <section><h2>威科夫结构与后市情景</h2><div class="formula">{% if wyckoff.status == "active" %}{{ "吸筹候选" if wyckoff.structure == "accumulation" else "派发候选" }}；Phase {{ wyckoff.phase }}；当前事件 {{ wyckoff.current_event }}。<div>交易区间 {{ wyckoff.range.support }}–{{ wyckoff.range.resistance }}；确认位 {{ wyckoff.projection.confirmation }}；失效位 {{ wyckoff.projection.invalidation }}。</div><div>目标观察区 {{ wyckoff.projection.target_zone | join("–") }}；结构匹配度 {{ (wyckoff.structural_fit * 100) | round(1) }}/100（非概率）。</div><div>{{ wyckoff.note }}</div>{% else %}{{ wyckoff.note or "暂无可确认的威科夫量价结构。" }}{% endif %}</div></section>
 </div>
 <div class="report-extra">
   <section><h2>评分构成</h2><table class="score-table">{% for component in analysis.components.values() %}<tr><td>{{ component.name }}</td><td>{{ component.score }}/100</td></tr>{% endfor %}</table></section>
@@ -66,17 +69,8 @@
     const graph = document.querySelector(".plotly-graph-div");
     const buttons = document.querySelectorAll(".report-algorithm-button");
     if (!graph || !window.Plotly) return;
-    const visibility = {wave: true, gann: false};
-    const fitPredictionView = () => {
-      const update = {"yaxis.autorange": true};
-      const layout = graph._fullLayout || graph.layout || {};
-      const xAxes = Object.keys(layout).filter((key) => /^xaxis\d*$/.test(key));
-      (xAxes.length ? xAxes : ["xaxis"]).forEach((axis) => {
-        update[`${axis}.autorange`] = true;
-      });
-      return Plotly.relayout(graph, update);
-    };
-    const apply = (algorithm, fitView = false) => {
+    const visibility = {wave: true, gann: false, wyckoff: false};
+    const apply = (algorithm) => {
       const enabled = visibility[algorithm];
       const indices = [...(graph.data || [])]
         .map((trace, index) => trace.meta?.algorithm === algorithm ? index : -1)
@@ -95,21 +89,17 @@
         }
       });
       if (Object.keys(update).length) operations.push(Plotly.relayout(graph, update));
-      return Promise.all(operations).then(() => {
-        if (algorithm === "gann" && enabled && fitView) {
-          return fitPredictionView();
-        }
-        return undefined;
-      });
+      return Promise.all(operations);
     };
     buttons.forEach((button) => button.addEventListener("click", () => {
       const algorithm = button.dataset.algorithm;
       visibility[algorithm] = !visibility[algorithm];
       button.classList.toggle("active", visibility[algorithm]);
       button.setAttribute("aria-pressed", String(visibility[algorithm]));
-      apply(algorithm, true);
+      apply(algorithm);
     }));
     apply("wave");
     apply("gann");
+    apply("wyckoff");
   });
 </script>

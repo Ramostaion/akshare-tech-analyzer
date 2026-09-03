@@ -79,6 +79,22 @@ def main() -> None:
         page.wait_for_function(
             "document.querySelector('.plotly-graph-div')?.dataset.gannReady === 'true'"
         )
+        pointer = page.evaluate(
+            """() => {
+              const graph = document.querySelector('.plotly-graph-div');
+              const rect = graph.getBoundingClientRect();
+              const xa = graph._fullLayout.xaxis;
+              const ya = graph._fullLayout.yaxis;
+              return {
+                x: rect.left + xa._offset + xa._length * 0.62,
+                y: rect.top + ya._offset + ya._length * 0.45,
+              };
+            }"""
+        )
+        page.mouse.move(pointer["x"], pointer["y"])
+        page.wait_for_function(
+            "document.querySelector('.akshare-crosshair')?.style.display === 'block'"
+        )
         result = page.evaluate(
             """() => {
               const graph = document.querySelector('.plotly-graph-div');
@@ -95,6 +111,21 @@ def main() -> None:
                   const y = ya.d2p(trace.y[last]);
                   return x >= 0 && x <= xa._length && y >= 0 && y <= ya._length;
                 }),
+                minimumTrendPixels: Math.min(...trends.map((trace) => {
+                  const start = xa.d2p(trace.x[0]);
+                  const end = xa.d2p(trace.x[trace.x.length - 1]);
+                  return Math.abs(end - start);
+                })),
+                crosshair: {
+                  date: graph.querySelector('[data-part="date"]')?.textContent || '',
+                  price: graph.querySelector('[data-part="price"]')?.textContent || '',
+                  verticalHeight: parseFloat(
+                    graph.querySelector('[data-part="vertical"]')?.style.height || '0'
+                  ),
+                  horizontalWidth: parseFloat(
+                    graph.querySelector('[data-part="horizontal"]')?.style.width || '0'
+                  ),
+                },
                 controllingRange: graph._fullLayout.xaxis4.range,
               };
             }"""
@@ -104,6 +135,11 @@ def main() -> None:
     assert result["count"] == 3
     assert result["visible"]
     assert result["pointsInPlot"]
+    assert result["minimumTrendPixels"] >= 48
+    assert result["crosshair"]["date"]
+    assert float(result["crosshair"]["price"].replace(",", "")) > 0
+    assert result["crosshair"]["verticalHeight"] > 0
+    assert result["crosshair"]["horizontalWidth"] > 0
     assert not errors
     print(json.dumps(result, ensure_ascii=False))
 

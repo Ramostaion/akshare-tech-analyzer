@@ -20,13 +20,20 @@ GRID_COLOR = "rgba(148, 163, 184, 0.13)"
 TEXT_COLOR = "#dbe4ee"
 BUY_TRIGGER_COLOR = "#facc15"
 WAVE_COLOR = "#22d3ee"
-WAVE_CONTINUATION_COLOR = "#a3e635"
+WAVE_CONTINUATION_COLOR = "#bef264"
 WAVE_INVALIDATION_COLOR = "#fb7185"
 WAVE_CONFIRMATION_COLOR = "#fbbf24"
 WAVE_NEUTRAL_COLOR = "#94a3b8"
 GANN_COLOR = "#c084fc"
 GANN_FAST_COLOR = "#e879f9"
 GANN_SLOW_COLOR = "#818cf8"
+PROJECTION_DISPLAY_FRACTION = 0.15
+DEFAULT_VISIBLE_BARS = {
+    "daily": 220,
+    "weekly": 156,
+    "monthly": 120,
+}
+DEFAULT_INTRADAY_VISIBLE_BARS = 300
 
 SETUP_LABELS = {
     "trend_pullback": "趋势回踩",
@@ -40,6 +47,96 @@ WAVE_PATTERN_LABELS = {
     "abc_zigzag": "ABC锯齿调整",
     "unfinished_abc": "未完成ABC调整",
 }
+
+
+def _projection_display_end(
+    frame: pd.DataFrame,
+    projected_end: pd.Timestamp,
+    visible_bars: int = 220,
+) -> pd.Timestamp:
+    """返回仅供绘图使用的终点，确保条件路径在近期窗口中可辨认。"""
+    datetimes = pd.to_datetime(frame["datetime"])
+    latest = pd.Timestamp(datetimes.iloc[-1])
+    start_position = max(0, len(datetimes) - max(2, visible_bars))
+    visible_start = pd.Timestamp(datetimes.iloc[start_position])
+    minimum_end = latest + (latest - visible_start) * PROJECTION_DISPLAY_FRACTION
+    return max(pd.Timestamp(projected_end), minimum_end)
+
+
+def _time_fraction(start: pd.Timestamp, end: pd.Timestamp, fraction: float) -> pd.Timestamp:
+    """在示意横轴上按比例布置路径节点，不赋予节点精确日期含义。"""
+    return start + (end - start) * fraction
+
+
+def _default_chart_x_range(
+    frame: pd.DataFrame,
+    period: str,
+) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """默认聚焦近期行情，同时为条件路径保留右侧显示空间。"""
+    datetimes = pd.to_datetime(frame["datetime"])
+    intervals = datetimes.diff().dropna()
+    if datetimes.empty or intervals.empty or intervals.median() <= pd.Timedelta(0):
+        return None
+    visible_bars = DEFAULT_VISIBLE_BARS.get(period, DEFAULT_INTRADAY_VISIBLE_BARS)
+    start_position = max(0, len(datetimes) - visible_bars)
+    latest = pd.Timestamp(datetimes.iloc[-1])
+    projected_end = latest + intervals.median() * 24
+    return (
+        pd.Timestamp(datetimes.iloc[start_position]),
+        _projection_display_end(frame, projected_end, visible_bars),
+    )
+
+
+def _default_price_y_range(
+    frame: pd.DataFrame,
+    period: str,
+    wave: dict[str, Any],
+    gann: dict[str, Any],
+    wyckoff: dict[str, Any] | None = None,
+) -> tuple[float, float] | None:
+    """按近期行情及当前算法价位设置价格轴，避免全历史极值压扁情景路径。"""
+    if frame.empty:
+        return None
+    visible_bars = DEFAULT_VISIBLE_BARS.get(period, DEFAULT_INTRADAY_VISIBLE_BARS)
+    recent = frame.tail(visible_bars)
+    values = [float(recent["low"].min()), float(recent["high"].max())]
+
+    candidates = wave.get("candidates", [])
+    if candidates:
+        candidate = candidates[0]
+        values.extend(float(item["price"]) for item in candidate.get("pivots", []))
+        projection = candidate.get("projection", {})
+        values.extend(float(value) for value in projection.get("primary_zone", []))
+        for key in ("confirmation", "invalidation"):
+            if projection.get(key) is not None:
+                values.append(float(projection[key]))
+
+    if gann.get("status") == "active":
+        values.extend(float(item["end_price"]) for item in gann.get("fan_lines", []))
+        for key in ("confirmation", "invalidation"):
+            if gann.get(key) is not None:
+                values.append(float(gann[key]))
+        nearest_levels = sorted(
+            gann.get("price_levels", []),
+            key=lambda item: abs(float(item["price"]) - float(frame["close"].iloc[-1])),
+        )[:5]
+        values.extend(float(item["price"]) for item in nearest_levels)
+
+    if wyckoff and wyckoff.get("status") == "active":
+        projection = wyckoff.get("projection", {})
+        values.extend(float(value) for value in projection.get("target_zone", []))
+        values.extend(float(value) for value in wyckoff.get("range", {}).values())
+        for key in ("confirmation", "invalidation"):
+            if projection.get(key) is not None:
+                values.append(float(projection[key]))
+
+    finite_values = [value for value in values if pd.notna(value)]
+    if not finite_values:
+        return None
+    lower = min(finite_values)
+    upper = max(finite_values)
+    padding = max((upper - lower) * 0.05, abs(float(frame["close"].iloc[-1])) * 0.005, 0.01)
+    return lower - padding, upper + padding
 
 PLOTLY_UNDO_POST_SCRIPT = r"""
 (function (graph) {
@@ -72,6 +169,114 @@ PLOTLY_UNDO_POST_SCRIPT = r"""
     clearTimeout(state.timer);
     state.timer = setTimeout(commit, 80);
   });
+
+  const crosshair = document.createElement("div");
+  crosshair.className = "akshare-crosshair";
+  crosshair.innerHTML = [
+    '<i data-part="vertical"></i>',
+    '<i data-part="horizontal"></i>',
+    '<span data-part="date"></span>',
+    '<span data-part="price"></span>'
+  ].join("");
+  Object.assign(crosshair.style, {
+    position: "absolute",
+    inset: "0",
+    zIndex: "30",
+    pointerEvents: "none",
+    display: "none"
+  });
+  const vertical = crosshair.querySelector('[data-part="vertical"]');
+  const horizontal = crosshair.querySelector('[data-part="horizontal"]');
+  const dateLabel = crosshair.querySelector('[data-part="date"]');
+  const priceLabel = crosshair.querySelector('[data-part="price"]');
+  [vertical, horizontal].forEach((line) => Object.assign(line.style, {
+    position: "absolute",
+    display: "block",
+    background: "rgba(226,232,240,0.58)"
+  }));
+  Object.assign(vertical.style, {width: "1px"});
+  Object.assign(horizontal.style, {height: "1px"});
+  [dateLabel, priceLabel].forEach((label) => Object.assign(label.style, {
+    position: "absolute",
+    display: "block",
+    boxSizing: "border-box",
+    padding: "3px 6px",
+    border: "1px solid #64748b",
+    borderRadius: "3px",
+    background: "#17202b",
+    color: "#f8fafc",
+    font: "11px/1.2 Consolas, monospace",
+    whiteSpace: "nowrap",
+    textAlign: "center"
+  }));
+  graph.style.position = "relative";
+  graph.appendChild(crosshair);
+  graph.__akshareCrosshair = crosshair;
+
+  const hideCrosshair = () => { crosshair.style.display = "none"; };
+  graph.addEventListener("mousemove", (event) => {
+    if (event.buttons) {
+      hideCrosshair();
+      return;
+    }
+    const layout = graph._fullLayout;
+    const xAxis = layout?.xaxis;
+    const yAxis = layout?.yaxis;
+    if (!xAxis || !yAxis) return;
+    const bounds = graph.getBoundingClientRect();
+    const x = event.clientX - bounds.left;
+    const y = event.clientY - bounds.top;
+    const inPricePlot = (
+      x >= xAxis._offset && x <= xAxis._offset + xAxis._length
+      && y >= yAxis._offset && y <= yAxis._offset + yAxis._length
+    );
+    if (!inPricePlot) {
+      hideCrosshair();
+      return;
+    }
+
+    const timestamp = new Date(xAxis.p2d(x - xAxis._offset));
+    const price = Number(yAxis.p2d(y - yAxis._offset));
+    if (Number.isNaN(timestamp.getTime()) || !Number.isFinite(price)) {
+      hideCrosshair();
+      return;
+    }
+    const span = Math.abs(Number(yAxis.range[1]) - Number(yAxis.range[0]));
+    const digits = span < 1 ? 4 : span < 100 ? 2 : span < 1000 ? 1 : 0;
+    const dateSpan = Math.abs(
+      new Date(xAxis.range[1]).getTime() - new Date(xAxis.range[0]).getTime()
+    );
+    const dateOptions = dateSpan <= 45 * 86400000
+      ? {month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false}
+      : {year: "numeric", month: "2-digit", day: "2-digit"};
+    dateLabel.textContent = new Intl.DateTimeFormat("zh-CN", dateOptions).format(timestamp);
+    priceLabel.textContent = price.toFixed(digits);
+
+    const plotTop = layout._size?.t ?? yAxis._offset;
+    const plotHeight = layout._size?.h ?? yAxis._length;
+    const labelX = Math.min(
+      Math.max(x, xAxis._offset + 54),
+      xAxis._offset + xAxis._length - 54
+    );
+    Object.assign(vertical.style, {left: `${x}px`, top: `${plotTop}px`, height: `${plotHeight}px`});
+    Object.assign(horizontal.style, {
+      left: `${xAxis._offset}px`,
+      top: `${y}px`,
+      width: `${xAxis._length}px`
+    });
+    Object.assign(dateLabel.style, {
+      left: `${labelX}px`,
+      top: `${plotTop + plotHeight - 23}px`,
+      transform: "translateX(-50%)"
+    });
+    Object.assign(priceLabel.style, {
+      left: `${xAxis._offset + xAxis._length - 2}px`,
+      top: `${y}px`,
+      transform: "translate(-100%, -50%)"
+    });
+    crosshair.style.display = "block";
+  });
+  graph.addEventListener("mouseleave", hideCrosshair);
 
   window.__akshareActivePlot = graph;
   if (window.__akshareUndoHandlerInstalled) return;
@@ -276,6 +481,19 @@ def _add_wave_overlay(figure: go.Figure, wave: dict[str, Any]) -> None:
     """将最高置信度候选的已确认 Pivot 连线并标注浪名。"""
     candidates = wave.get("candidates", [])
     if not candidates:
+        figure.add_annotation(
+            name="algorithm-wave-empty-note",
+            x=0.99,
+            y=0.98,
+            xref="paper",
+            yref="paper",
+            text="当前周期没有满足硬规则的已确认波浪候选",
+            showarrow=False,
+            xanchor="right",
+            yanchor="top",
+            font={"color": WAVE_NEUTRAL_COLOR, "size": 10},
+            bgcolor="rgba(11,16,23,0.78)",
+        )
         return
     candidate = candidates[0]
     pivots = candidate.get("pivots", [])
@@ -357,7 +575,8 @@ def _add_wave_scenarios(
         return
 
     current_time = pd.Timestamp(datetimes.iloc[-1])
-    future_time = current_time + interval * 8
+    projected_time = current_time + interval * 8
+    future_time = _projection_display_end(frame, projected_time)
     zone_lower, zone_upper = sorted(float(value) for value in target_zone)
     target_midpoint = (zone_lower + zone_upper) / 2
     current_price = float(frame["close"].iloc[-1])
@@ -384,17 +603,25 @@ def _add_wave_scenarios(
     if confirmation_pending:
         path_1_x = [
             current_time,
-            current_time + interval * 3,
-            current_time + interval * 6,
+            _time_fraction(current_time, future_time, 3 / 8),
+            _time_fraction(current_time, future_time, 6 / 8),
             future_time,
         ]
         path_1_y = [current_price, confirmation_price, zone_entry, target_midpoint]
         failed_probe = confirmation_price
     else:
-        path_1_x = [current_time, current_time + interval * 5, future_time]
+        path_1_x = [
+            current_time,
+            _time_fraction(current_time, future_time, 5 / 8),
+            future_time,
+        ]
         path_1_y = [current_price, zone_entry, target_midpoint]
         failed_probe = current_price + (zone_entry - current_price) * 0.35
-    path_2_x = [current_time, current_time + interval * 3, current_time + interval * 7]
+    path_2_x = [
+        current_time,
+        _time_fraction(current_time, future_time, 3 / 8),
+        _time_fraction(current_time, future_time, 7 / 8),
+    ]
     path_2_y = [current_price, failed_probe, invalidation_price]
 
     atr_value = frame["ATR14"].iloc[-1] if "ATR14" in frame else None
@@ -448,10 +675,14 @@ def _add_wave_scenarios(
             meta={"algorithm": "wave"},
             legendgroup="algorithm-wave",
             text=[""] * (len(path_1_x) - 1) + ["情景 1"],
-            textposition="top center",
-            textfont={"color": WAVE_CONTINUATION_COLOR, "size": 11},
-            line={"color": WAVE_CONTINUATION_COLOR, "width": 2.5, "dash": "dash"},
-            marker={"color": WAVE_CONTINUATION_COLOR, "size": 6},
+                textposition="top center",
+                textfont={"color": WAVE_CONTINUATION_COLOR, "size": 11},
+                line={"color": WAVE_CONTINUATION_COLOR, "width": 4, "dash": "solid"},
+                marker={
+                    "color": WAVE_CONTINUATION_COLOR,
+                    "size": 8,
+                    "line": {"color": "#365314", "width": 1},
+                },
             hovertemplate=(
                 f"情景 1：确认后向{target_label}推进"
                 f"<br>目标区：{zone_lower:.3f}–{zone_upper:.3f}"
@@ -468,9 +699,9 @@ def _add_wave_scenarios(
         neutral_midpoint = (confirmation_price + invalidation_price) / 2
         neutral_x = [
             current_time,
-            current_time + interval * 2,
-            current_time + interval * 4,
-            current_time + interval * 6,
+            _time_fraction(current_time, future_time, 2 / 8),
+            _time_fraction(current_time, future_time, 4 / 8),
+            _time_fraction(current_time, future_time, 6 / 8),
         ]
         neutral_y = [
             current_price,
@@ -609,7 +840,8 @@ def _add_gann_overlay(
     fan_items = gann.get("fan_lines", [])
     future_times = [pd.Timestamp(item["end_time"]) for item in fan_items]
     latest_time = pd.Timestamp(frame["datetime"].iloc[-1])
-    future_end = max(future_times, default=latest_time)
+    projected_end = max(future_times, default=latest_time)
+    future_end = _projection_display_end(frame, projected_end)
     current_close = float(frame["close"].iloc[-1])
     trend_end_prices = [float(item["end_price"]) for item in fan_items]
     padding_prices = [current_close, *trend_end_prices]
@@ -654,7 +886,7 @@ def _add_gann_overlay(
             go.Scatter(
                 x=[
                     pd.Timestamp(item.get("current_time", item["start_time"])),
-                    pd.Timestamp(item["end_time"]),
+                    future_end,
                 ],
                 y=[float(item.get("current_price", item["start_price"])), float(item["end_price"])],
                 mode="lines+text",
@@ -677,7 +909,8 @@ def _add_gann_overlay(
             col=1,
         )
 
-    level_end = max(future_times, default=latest_time)
+
+    level_end = future_end
     level_x: list[pd.Timestamp | None] = []
     level_y: list[float | None] = []
     level_text: list[str | None] = []
@@ -756,6 +989,121 @@ def _add_gann_overlay(
         )
 
 
+def _add_wyckoff_overlay(
+    figure: go.Figure,
+    frame: pd.DataFrame,
+    wyckoff: dict[str, Any],
+) -> None:
+    """绘制威科夫交易区间、事件和两条条件情景。"""
+    if wyckoff.get("status") != "active" or frame.empty:
+        return
+    support = float(wyckoff["range"]["support"])
+    resistance = float(wyckoff["range"]["resistance"])
+    projection = wyckoff.get("projection", {})
+    target_zone = projection.get("target_zone", [])
+    if len(target_zone) != 2:
+        return
+    current_time = pd.Timestamp(frame["datetime"].iloc[-1])
+    current_price = float(frame["close"].iloc[-1])
+    interval = pd.to_datetime(frame["datetime"]).diff().dropna().median()
+    if interval <= pd.Timedelta(0):
+        return
+    future_time = _projection_display_end(frame, current_time + interval * 12)
+    confirmation = float(projection["confirmation"])
+    invalidation = float(projection["invalidation"])
+    target_midpoint = sum(float(value) for value in target_zone) / 2
+    common = {
+        "meta": {"algorithm": "wyckoff"},
+        "legendgroup": "algorithm-wyckoff",
+        "visible": False,
+    }
+
+    range_start = pd.Timestamp(frame["datetime"].iloc[max(0, len(frame) - 120)])
+    figure.add_shape(
+        name="algorithm-wyckoff-range",
+        type="rect",
+        x0=range_start,
+        x1=current_time,
+        y0=support,
+        y1=resistance,
+        fillcolor="rgba(251,191,36,0.06)",
+        line={"color": "rgba(251,191,36,0.65)", "width": 1, "dash": "dot"},
+        visible=False,
+        row=1,
+        col=1,
+    )
+    events = wyckoff.get("events", [])
+    if events:
+        figure.add_trace(
+            go.Scatter(
+                x=[pd.Timestamp(item["timestamp"]) for item in events],
+                y=[float(item["price"]) for item in events],
+                text=[str(item["event"]) for item in events],
+                customdata=[
+                    f"量比 {float(item['volume_ratio']):.2f} · "
+                    f"振幅 {float(item['spread_atr']):.2f} ATR"
+                    for item in events
+                ],
+                mode="markers+text",
+                name="威科夫事件",
+                textposition="top center",
+                marker={"color": "#fbbf24", "size": 8, "symbol": "diamond"},
+                hovertemplate="威科夫 %{text}<br>%{customdata}<extra></extra>",
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+    scenario_x = [
+        current_time,
+        _time_fraction(current_time, future_time, 0.45),
+        future_time,
+    ]
+    continuation_y = [current_price, confirmation, target_midpoint]
+    failure_y = [current_price, (current_price + confirmation) / 2, invalidation]
+    for name, y_values, color, dash in (
+        ("威科夫情景 1：确认后延续", continuation_y, "#facc15", "solid"),
+        ("威科夫情景 2：结构失败", failure_y, "#fb7185", "dash"),
+    ):
+        figure.add_trace(
+            go.Scatter(
+                x=scenario_x,
+                y=y_values,
+                mode="lines+markers+text",
+                name=name,
+                text=["", "", "情景 1" if "情景 1" in name else "情景 2"],
+                textposition="top center" if "情景 1" in name else "bottom center",
+                line={"color": color, "width": 3, "dash": dash},
+                marker={"color": color, "size": 7},
+                hovertemplate=(
+                    f"{name}<br>横向距离仅为结构示意，不预测到达时间<extra></extra>"
+                ),
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
+    figure.add_annotation(
+        name="algorithm-wyckoff-phase",
+        x=current_time,
+        y=resistance,
+        text=(
+            f"威科夫 {str(wyckoff.get('structure', '')).upper()} "
+            f"Phase {wyckoff.get('phase', '--')}"
+        ),
+        showarrow=False,
+        xanchor="right",
+        yanchor="bottom",
+        font={"color": "#fbbf24", "size": 10},
+        bgcolor="rgba(11,16,23,0.78)",
+        visible=False,
+        row=1,
+        col=1,
+    )
+
+
 def create_figure(
     frame: pd.DataFrame,
     analysis: dict[str, Any],
@@ -765,6 +1113,7 @@ def create_figure(
     signals: list[TradingSignal] | None = None,
     wave: dict[str, Any] | None = None,
     gann: dict[str, Any] | None = None,
+    wyckoff: dict[str, Any] | None = None,
 ) -> go.Figure:
     """创建主图、成交量、MACD、RSI 以及可选 KDJ 子图。"""
     show_kdj = request.show_kdj
@@ -807,6 +1156,7 @@ def create_figure(
     _add_wave_overlay(figure, wave or {})
     _add_wave_scenarios(figure, frame, wave or {})
     _add_gann_overlay(figure, frame, gann or {})
+    _add_wyckoff_overlay(figure, frame, wyckoff or {})
 
     volume_colors = [
         up_color if close >= open_ else down_color
@@ -932,6 +1282,18 @@ def create_figure(
         rangebreaks=[{"bounds": ["sat", "mon"]}] if request.period == "daily" else None,
     )
     figure.update_yaxes(showgrid=True, gridcolor=GRID_COLOR, fixedrange=False)
+    default_y_range = _default_price_y_range(
+        frame,
+        request.period,
+        wave or {},
+        gann or {},
+        wyckoff or {},
+    )
+    if default_y_range is not None:
+        figure.update_yaxes(range=list(default_y_range), autorange=False, row=1, col=1)
+    default_x_range = _default_chart_x_range(frame, request.period)
+    if default_x_range is not None:
+        figure.update_xaxes(range=list(default_x_range), autorange=False)
     return figure
 
 

@@ -28,6 +28,7 @@ from app.report import build_report_html, safe_report_filename, write_report
 from app.setups import current_setups, evaluate_setups
 from app.signals import generate_signals
 from app.wave import analyze_wave_candidates
+from app.wyckoff import analyze_wyckoff
 
 logger = get_logger("service")
 
@@ -123,6 +124,7 @@ class AnalyzerService:
             current_signal.historical_probability = similar_stats["win_rate"] / 100
         wave_analysis = analyze_wave_candidates(enriched)
         gann_analysis = analyze_gann(enriched)
+        wyckoff_analysis = analyze_wyckoff(enriched)
         quant = {
             "factor_snapshot": factor_snapshot(factors),
             "market_regime": regime,
@@ -135,6 +137,7 @@ class AnalyzerService:
             "backtest": strategy_backtest,
             "wave": wave_analysis,
             "gann": gann_analysis,
+            "wyckoff": wyckoff_analysis,
         }
         analysis["technical_score_label"] = "Market / Technical State Score"
         analysis["quant"] = quant
@@ -157,6 +160,7 @@ class AnalyzerService:
             signals,
             wave_analysis,
             gann_analysis,
+            wyckoff_analysis,
         )
         chart_html = render_figure_html(figure, full_html=False)
         report_html = build_report_html(figure, market_data, request, analysis, levels, quant)

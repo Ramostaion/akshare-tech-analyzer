@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -45,6 +46,9 @@ def main() -> None:
         undone = page.evaluate("document.querySelector('.plotly-graph-div').layout.shapes.length")
         layer_result = None
         if page.locator(".report-algorithm-button").count() >= 2:
+            range_before = page.evaluate(
+                "[...document.querySelector('.plotly-graph-div')._fullLayout.xaxis.range]"
+            )
             page.locator('[data-algorithm="gann"]').click()
             page.locator('[data-algorithm="wave"]').click()
             page.wait_for_timeout(200)
@@ -52,21 +56,44 @@ def main() -> None:
                 """() => {
                   const graph = document.querySelector('.plotly-graph-div');
                   const traces = [...(graph.data || [])];
+                  const trends = traces.filter((trace) =>
+                    String(trace.name || '').startsWith('江恩后续趋势'));
+                  const xa = graph._fullLayout.xaxis;
+                  const ya = graph._fullLayout.yaxis;
                   return {
                     gannVisible: traces.filter((trace) => trace.meta?.algorithm === 'gann')
                       .every((trace) => trace.visible === true),
                     waveHidden: traces.filter((trace) => trace.meta?.algorithm === 'wave')
                       .every((trace) => trace.visible === false),
+                    trendCount: trends.length,
+                    trendsInPlot: trends.every((trace) => trace.x.every((x, index) => {
+                      const px = xa.d2p(x);
+                      const py = ya.d2p(trace.y[index]);
+                      return px >= 0 && px <= xa._length && py >= 0 && py <= ya._length;
+                    })),
                   };
                 }"""
             )
+            range_after = page.evaluate(
+                "[...document.querySelector('.plotly-graph-div')._fullLayout.xaxis.range]"
+            )
+            layer_result["viewPreserved"] = range_after == range_before
         browser.close()
 
     if drawn != initial + 1 or undone != initial:
         raise SystemExit(f"撤销检查失败: initial={initial}, drawn={drawn}, undone={undone}")
-    if layer_result and not all(layer_result.values()):
+    if layer_result and (
+        not layer_result["gannVisible"]
+        or not layer_result["waveHidden"]
+        or layer_result["trendCount"] != 3
+        or not layer_result["trendsInPlot"]
+        or not layer_result["viewPreserved"]
+    ):
         raise SystemExit(f"离线算法图层检查失败: {layer_result}")
-    print(f"撤销检查通过: initial={initial}, drawn={drawn}, undone={undone}")
+    print(
+        f"撤销检查通过: initial={initial}, drawn={drawn}, undone={undone}; "
+        f"layers={json.dumps(layer_result, ensure_ascii=False)}"
+    )
 
 
 if __name__ == "__main__":

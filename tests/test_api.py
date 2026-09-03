@@ -126,6 +126,7 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert "expectancy_r" in body["quant"]["backtest"]["metrics"]
     assert body["quant"]["gann"]["status"] == "active"
     assert body["quant"]["gann"]["anchor_mode"] == "auto_confirmed_pivot"
+    assert body["quant"]["wyckoff"]["status"] == "active"
     assert body["analysis"]["technical_score_label"] == "Market / Technical State Score"
     assert body["analysis"]["state"] != "数据不足"
     assert "Plotly.newPlot" in body["chart_html"]
@@ -138,8 +139,10 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert "600011" in report.text
     assert "仅为算法技术分析结果，不构成投资建议" in report.text
     assert "江恩结构与后市情景" in report.text
+    assert "威科夫结构与后市情景" in report.text
     assert "report-algorithm-button" in report.text
-    assert "fitPredictionView" in report.text
+    assert "fitPredictionView" not in report.text
+    assert "const apply = (algorithm)" in report.text
     assert "attachment" in download.headers["content-disposition"]
 
 
