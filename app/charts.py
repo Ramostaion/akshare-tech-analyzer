@@ -418,7 +418,7 @@ def _add_buy_signal_markers(
     frame: pd.DataFrame,
     signals: list[TradingSignal],
 ) -> None:
-    """在确认 Trigger 的 K 线下方标记历史做多信号。"""
+    """在确认 Trigger 的 K 线下方标记历史做多信号，默认隐藏。"""
     buy_signals = [signal for signal in signals if signal.direction == "long"]
     if not buy_signals:
         return
@@ -440,7 +440,7 @@ def _add_buy_signal_markers(
         y_values.append(float(bar["low"]) * 0.985)
         setup_label = SETUP_LABELS.get(signal.setup, signal.setup)
         hover_text.append(
-            f"买入 Trigger（收盘确认）<br>日期：{timestamp:%Y-%m-%d %H:%M}"
+            f"做多 Trigger（收盘确认，非实际成交）<br>日期：{timestamp:%Y-%m-%d %H:%M}"
             f"<br>类型：{setup_label}<br>质量分：{signal.score:.1f}/100"
             f"<br>收盘参考价：{signal.entry_reference:.3f}"
             "<br>默认最早在下一根 K 线执行"
@@ -453,7 +453,7 @@ def _add_buy_signal_markers(
             x=x_values,
             y=y_values,
             mode="markers",
-            name="历史买入 Trigger",
+            name="历史做多 Trigger（非实际成交）",
             text=hover_text,
             marker={
                 "color": BUY_TRIGGER_COLOR,
@@ -462,6 +462,9 @@ def _add_buy_signal_markers(
                 "line": {"color": "#713f12", "width": 1},
             },
             hovertemplate="%{text}<extra></extra>",
+            meta={"overlay": "history_signals"},
+            legendgroup="technical-signals",
+            visible="legendonly",
         ),
         row=1,
         col=1,

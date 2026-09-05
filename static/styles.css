@@ -120,6 +120,23 @@ h3 { margin: 0 0 8px; font-size: 13px; }
 .summary-panel p { color: #c7d1dc; line-height: 1.7; }
 .score-ring { width: 42px; height: 42px; border: 2px solid var(--gold); color: var(--gold); border-radius: 50%; display: grid; place-items: center; font-weight: 800; }
 .signal-overview { margin-top: 14px; }
+.decision-status { padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 800; }
+.decision-status.status-long_trigger { border-color: #2f855a; color: #68d391; }
+.decision-status.status-exit_trigger,.decision-status.status-conflict { border-color: #c05621; color: #f6ad55; }
+.decision-status.status-watch { border-color: #b7791f; color: #f6d365; }
+.decision-status.status-active_after_trigger { border-color: #3182ce; color: #90cdf4; }
+.decision-banner { margin-top: 12px; padding: 12px 14px; border-left: 3px solid #64748b; background: rgb(15 23 34 / 72%); }
+.decision-banner.status-long_trigger { border-left-color: #22c55e; }
+.decision-banner.status-exit_trigger,.decision-banner.status-conflict { border-left-color: #f97316; }
+.decision-banner.status-watch { border-left-color: #eab308; }
+.decision-banner.status-active_after_trigger { border-left-color: #4299e1; }
+.decision-banner h3 { margin: 0 0 5px; color: #edf2f7; font-size: 17px; }
+.decision-banner p { margin: 0; line-height: 1.55; }
+.decision-actions { margin: 8px 0 0; }
+.decision-actions > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 7px 0; border-bottom: 1px solid rgb(38 52 66 / 65%); }
+.decision-actions dt { color: var(--muted); }
+.decision-actions dd { margin: 0; color: #e7edf4; line-height: 1.5; }
+.execution-plan-details { margin-top: 10px; }
 .signal-score-row { display: grid; grid-template-columns: 1fr 38px; align-items: center; gap: 10px; }
 .signal-score-row > strong { color: var(--gold); font-size: 20px; text-align: right; }
 .signal-score-track { display: inline-block; width: 100%; height: 8px; overflow: hidden; border-radius: 2px; background: #263442; vertical-align: middle; }

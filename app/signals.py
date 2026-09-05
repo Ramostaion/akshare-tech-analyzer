@@ -143,14 +143,27 @@ def generate_signals(
     regimes: pd.Series,
     setups: pd.DataFrame,
 ) -> list[TradingSignal]:
-    """将所有 Trigger 行转换为统一 TradingSignal 列表。"""
+    """将 Trigger 转为信号；同一连续 Setup 生命周期只保留首次 Trigger。"""
     signals: list[TradingSignal] = []
+    emitted_in_lifecycle = {setup: False for setup in (
+        "trend_pullback", "breakout", "support_reversal", "trend_breakdown"
+    )}
     for position in range(len(frame)):
         for setup in ("trend_pullback", "breakout", "support_reversal", "trend_breakdown"):
-            if bool(setups[f"{setup}_trigger"].iloc[position]):
+            active = bool(setups[setup].iloc[position]) or bool(
+                setups[f"{setup}_trigger"].iloc[position]
+            )
+            if not active:
+                emitted_in_lifecycle[setup] = False
+                continue
+            if (
+                bool(setups[f"{setup}_trigger"].iloc[position])
+                and not emitted_in_lifecycle[setup]
+            ):
                 signals.append(
                     create_signal(
                         symbol, frame, factors, position, setup, str(regimes.iloc[position])
                     )
                 )
+                emitted_in_lifecycle[setup] = True
     return signals

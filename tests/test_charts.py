@@ -37,12 +37,15 @@ def test_buy_triggers_are_marked_and_exit_signals_are_excluded(market_frame) -> 
     assert len(figure.data) == 1
     trace = figure.data[0]
     assert isinstance(trace, go.Scatter)
-    assert trace.name == "历史买入 Trigger"
+    assert trace.name == "历史做多 Trigger（非实际成交）"
     assert trace.marker.color == BUY_TRIGGER_COLOR
     assert trace.marker.symbol == "triangle-up"
     assert len(trace.x) == 1
     assert "趋势回踩" in trace.text[0]
+    assert "非实际成交" in trace.text[0]
     assert "下一根 K 线执行" in trace.text[0]
+    assert trace.visible == "legendonly"
+    assert trace.meta["overlay"] == "history_signals"
 
 
 def test_top_wave_candidate_is_connected_and_labeled() -> None:

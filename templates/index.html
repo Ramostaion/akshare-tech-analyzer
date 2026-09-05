@@ -43,6 +43,7 @@
                 <label class="toggle"><input id="show-boll" type="checkbox" checked><span>BOLL</span></label>
                 <label class="toggle"><input id="show-levels" type="checkbox" checked><span>关键位</span></label>
                 <label class="toggle"><input id="show-kdj" type="checkbox"><span>KDJ</span></label>
+                <label class="toggle"><input id="show-history-signals" type="checkbox"><span>历史做多 Trigger</span></label>
               </div>
             </div>
             <div class="refresh-field">
@@ -82,27 +83,41 @@
 
       <div class="analysis-grid decision-grid">
         <section class="summary-panel">
-          <div class="panel-heading"><h2>当前结论与交易计划</h2><span class="score-caption">技术状态评分</span></div>
+          <div class="panel-heading"><h2>当前结论与交易计划</h2><span id="decision-status" class="decision-status">等待分析</span></div>
           <div class="signal-overview">
             <div class="signal-score-row">
               <div class="signal-score-track"><i id="technical-score-fill"></i></div>
               <strong id="score-ring">--</strong>
             </div>
-            <dl class="signal-facts">
-              <div><dt>当前交易形态</dt><dd id="overview-setup">暂无</dd></div>
-              <div><dt>信号质量</dt><dd><span class="signal-score-track"><i id="signal-score-fill"></i></span><strong id="overview-signal-score">--</strong></dd></div>
-              <div><dt>历史类似信号</dt><dd id="overview-samples">0 次</dd></div>
-              <div><dt>成功率</dt><dd id="overview-win-rate">--</dd></div>
-              <div><dt>历史期望 R</dt><dd id="overview-expected-r">--</dd></div>
+            <div id="decision-banner" class="decision-banner">
+              <h3 id="decision-headline">等待分析</h3>
+              <p id="decision-summary">--</p>
+            </div>
+            <dl class="decision-actions">
+              <div><dt>空仓计划</dt><dd id="decision-flat-action">--</dd></div>
+              <div><dt>持仓计划</dt><dd id="decision-holding-action">--</dd></div>
+              <div><dt>触发条件</dt><dd id="decision-trigger">--</dd></div>
+              <div><dt>取消观察 / 风控条件</dt><dd id="decision-invalidation">--</dd></div>
             </dl>
-            <div class="signal-divider"></div>
-            <dl class="trade-plan">
-              <div><dt>观察买入区</dt><dd id="overview-entry-zone">--</dd></div>
-              <div><dt>失效位</dt><dd id="overview-stop">--</dd></div>
-              <div><dt>第一目标</dt><dd id="overview-target-1">--</dd></div>
-              <div><dt>第二目标</dt><dd id="overview-target-2">--</dd></div>
-              <div><dt>潜在盈亏比</dt><dd id="overview-reward-risk">--</dd></div>
-            </dl>
+            <details id="execution-plan-details" class="audit-details execution-plan-details">
+              <summary>执行价格与历史统计 <span>仅在 Trigger 确认后执行</span></summary>
+              <dl class="signal-facts">
+                <div><dt>当前交易形态</dt><dd id="overview-setup">暂无</dd></div>
+                <div><dt>信号质量</dt><dd><span class="signal-score-track"><i id="signal-score-fill"></i></span><strong id="overview-signal-score">--</strong></dd></div>
+                <div><dt>历史类似信号</dt><dd id="overview-samples">0 次</dd></div>
+                <div><dt>成功率</dt><dd id="overview-win-rate">--</dd></div>
+                <div><dt>历史期望 R</dt><dd id="overview-expected-r">--</dd></div>
+              </dl>
+              <div class="signal-divider"></div>
+              <dl class="trade-plan">
+                <div><dt>下一根执行区</dt><dd id="overview-entry-zone">--</dd></div>
+                <div><dt>失效位</dt><dd id="overview-stop">--</dd></div>
+                <div><dt>第一目标</dt><dd id="overview-target-1">--</dd></div>
+                <div><dt>第二目标</dt><dd id="overview-target-2">--</dd></div>
+                <div><dt>潜在盈亏比</dt><dd id="overview-reward-risk">--</dd></div>
+              </dl>
+              <p id="decision-validity" class="detail-note"></p>
+            </details>
           </div>
           <p id="summary" class="state-summary"></p>
           <div id="scenario" class="scenario hidden"></div>
@@ -111,7 +126,7 @@
       </div>
 
       <div class="algorithm-toolbar" aria-label="预测算法图层">
-        <strong>预测算法图层</strong>
+        <strong>理论情景图层</strong>
         <button class="algorithm-toggle active" type="button" data-algorithm="wave" aria-pressed="true"><i></i>波浪理论</button>
         <button class="algorithm-toggle" type="button" data-algorithm="gann" aria-pressed="false"><i></i>江恩理论</button>
         <button class="algorithm-toggle" type="button" data-algorithm="wyckoff" aria-pressed="false"><i></i>威科夫理论</button>

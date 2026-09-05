@@ -14,6 +14,7 @@ const favoriteButton = document.querySelector("#favorite-button");
 const favoriteContextMenu = document.querySelector("#favorite-context-menu");
 const removeFavoriteButton = document.querySelector("#remove-favorite");
 const algorithmButtons = [...document.querySelectorAll(".algorithm-toggle")];
+const historySignalsToggle = document.querySelector("#show-history-signals");
 let refreshTimer = null;
 let chartResizeObserver = null;
 let chartResizeFrame = null;
@@ -21,7 +22,11 @@ let suggestionTimer = null;
 let currentInstrument = null;
 let contextFavorite = null;
 let renderedChartContext = null;
-const algorithmVisibility = { wave: true, gann: false, wyckoff: false };
+const algorithmVisibility = {
+  wave: true,
+  gann: false,
+  wyckoff: false,
+};
 
 const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
 const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
@@ -419,6 +424,46 @@ function renderQuant(quant, security) {
       )).join(" / ")
       : "暂无明确 Setup";
   const signalScore = signal?.score;
+  const decision = quant?.current_decision || {
+    status: signal ? (signal.direction === "long" ? "long_trigger" : "exit_trigger") : "no_setup",
+    headline: signal ? "Trigger 已确认" : "暂无可执行交易结构",
+    summary: signal ? "严格规则已经收盘确认。" : "当前结论是等待。",
+    flat_action: signal ? "空仓：按执行计划评估。" : "空仓：暂不入场。",
+    holding_action: signal ? "持仓：按失效位管理。" : "持仓：维持既有风控。",
+    validity_note: "条件只按最新一根已收盘 K 线判断。",
+    is_executable: Boolean(signal),
+  };
+  const decisionLabels = {
+    no_setup: "等待",
+    watch: "观察中",
+    long_trigger: "做多已确认",
+    exit_trigger: "退出已确认",
+    conflict: "信号冲突",
+    active_after_trigger: "持仓管理",
+  };
+  const statusNode = document.querySelector("#decision-status");
+  statusNode.textContent = decisionLabels[decision.status] || decision.status || "等待";
+  statusNode.className = `decision-status status-${decision.status || "no_setup"}`;
+  const banner = document.querySelector("#decision-banner");
+  banner.className = `decision-banner status-${decision.status || "no_setup"}`;
+  setText("#decision-headline", decision.headline);
+  setText("#decision-summary", decision.summary);
+  setText("#decision-flat-action", decision.flat_action);
+  setText("#decision-holding-action", decision.holding_action);
+  const triggerPrice = decision.trigger_price == null
+    ? ""
+    : `（参考价 ${priceText(decision.trigger_price, security?.currency)}）`;
+  const invalidationPrice = decision.invalidation_price == null
+    ? ""
+    : `（参考价 ${priceText(decision.invalidation_price, security?.currency)}）`;
+  setText("#decision-trigger", decision.trigger_condition
+    ? `${decision.trigger_condition}${triggerPrice}`
+    : "当前无待确认 Trigger");
+  setText("#decision-invalidation", decision.invalidation_condition
+    ? `${decision.invalidation_condition}${invalidationPrice}`
+    : "按既有止损或下一次分析更新");
+  setText("#decision-validity", decision.validity_note);
+  document.querySelector("#execution-plan-details").open = Boolean(decision.is_executable);
   setText("#overview-setup", activeSetup);
   setText("#overview-signal-score", signalScore == null ? "等待触发" : number(signalScore, 0));
   document.querySelector("#signal-score-fill").style.width = `${signalScore || 0}%`;
@@ -433,7 +478,13 @@ function renderQuant(quant, security) {
     `失效位：${number(signal.stop_price, 3)}`,
     `第一目标：${number(signal.target_1, 3)} · 第二目标：${number(signal.target_2, 3)}`,
     `潜在盈亏比：${number(signal.reward_risk_ratio, 2)}`,
-  ] : []);
+  ] : [
+    `当前结论：${decision.headline}`,
+    `空仓计划：${decision.flat_action}`,
+    `持仓计划：${decision.holding_action}`,
+    `触发条件：${decision.trigger_condition || "当前无待确认 Trigger"}`,
+    `取消观察 / 风控：${decision.invalidation_condition || "按既有止损管理"}`,
+  ]);
   const history = quant?.historical_similar || {};
   setText("#overview-samples", `${history.sample_count || 0} 次`);
   setText(
@@ -447,7 +498,7 @@ function renderQuant(quant, security) {
       : `${history.expected_r >= 0 ? "+" : ""}${number(history.expected_r, 2)}R`,
   );
   const currency = security?.currency;
-  const pendingText = "等待 Trigger 后计算";
+  const pendingText = "未触发，不预设";
   setText(
     "#overview-entry-zone",
     signal?.entry_zone_lower != null && signal?.entry_zone_upper != null
@@ -554,6 +605,15 @@ function setAlgorithmLayer(graph, algorithm, enabled) {
   });
 }
 
+function setHistorySignalsLayer(graph, enabled) {
+  if (!graph || !window.Plotly) return Promise.resolve();
+  const traceIndices = [...(graph.data || [])]
+    .map((trace, index) => trace.meta?.overlay === "history_signals" ? index : -1)
+    .filter((index) => index >= 0);
+  if (!traceIndices.length) return Promise.resolve();
+  return window.Plotly.restyle(graph, { visible: enabled }, traceIndices);
+}
+
 function applyAlgorithmLayers(graph) {
   let attempts = 0;
   const apply = () => {
@@ -565,6 +625,7 @@ function applyAlgorithmLayers(graph) {
     Object.entries(algorithmVisibility).forEach(([algorithm, enabled]) => {
       setAlgorithmLayer(graph, algorithm, enabled);
     });
+    setHistorySignalsLayer(graph, historySignalsToggle.checked);
   };
   requestAnimationFrame(apply);
 }
@@ -582,6 +643,13 @@ algorithmButtons.forEach((button) => {
   });
 });
 updateAlgorithmButtons();
+
+historySignalsToggle.addEventListener("change", () => {
+  setHistorySignalsLayer(
+    document.querySelector("#chart .plotly-graph-div"),
+    historySignalsToggle.checked,
+  );
+});
 
 function chartContext(data) {
   const request = data.request || {};

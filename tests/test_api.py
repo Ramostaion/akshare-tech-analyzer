@@ -123,6 +123,9 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert body["metadata"]["security"]["symbol"] == "600011"
     assert body["quant"]["market_regime"]["regime"]
     assert body["quant"]["score_type"] == "RULE_SCORE"
+    assert body["quant"]["current_decision"]["headline"]
+    assert body["quant"]["current_decision"]["flat_action"].startswith("空仓：")
+    assert body["quant"]["current_decision"]["holding_action"].startswith("持仓：")
     assert "expectancy_r" in body["quant"]["backtest"]["metrics"]
     assert body["quant"]["gann"]["status"] == "active"
     assert body["quant"]["gann"]["anchor_mode"] == "auto_confirmed_pivot"
@@ -141,6 +144,7 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert "江恩结构与后市情景" in report.text
     assert "威科夫结构与后市情景" in report.text
     assert "report-algorithm-button" in report.text
+    assert 'data-algorithm="history_signals"' not in report.text
     assert "fitPredictionView" not in report.text
     assert "const apply = (algorithm)" in report.text
     assert "attachment" in download.headers["content-disposition"]

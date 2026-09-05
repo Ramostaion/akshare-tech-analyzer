@@ -20,7 +20,7 @@
   {% if market.snapshot %}<div class="source">独立快照：最新价 {{ market.snapshot.latest if market.snapshot.latest is not none else "--" }} · 数据时间 {{ market.snapshot.source_timestamp or "未知" }} · 采集时间 {{ market.snapshot.captured_at }}</div>{% endif %}
 </header>
 <div class="report-algorithm-toolbar">
-  <strong>预测算法图层</strong>
+  <strong>理论情景图层</strong>
   <button class="report-algorithm-button active" type="button" data-algorithm="wave" aria-pressed="true">波浪理论</button>
   <button class="report-algorithm-button" type="button" data-algorithm="gann" aria-pressed="false">江恩理论</button>
   <button class="report-algorithm-button" type="button" data-algorithm="wyckoff" aria-pressed="false">威科夫理论</button>
@@ -33,11 +33,12 @@
   <section><h2 style="color:#f2b84b">风险提示</h2><ul>{% for item in analysis.warning %}<li>{{ item }}</li>{% endfor %}{% for item in market.quality_notes %}<li>{{ item }}</li>{% endfor %}</ul></section>
 </div>
 {% set signal = quant.current_signal if quant else none %}
+{% set decision = quant.current_decision|default({}) if quant else {} %}
 {% set history = quant.historical_similar if quant else {} %}
 {% set qmetrics = quant.backtest.metrics if quant and quant.backtest else {} %}
 <div class="report-extra">
-  <section><h2>市场状态与交易形态</h2><div class="formula">{{ quant.market_regime.regime if quant else "数据不足" }}；置信度 {{ "%.1f%%"|format(quant.market_regime.confidence * 100) if quant else "--" }}。<div>当前交易形态：{% for item in quant.current_setups %}{{ item.setup }}{{ "（已触发）" if item.triggered else "（等待触发）" }}{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</div></div></section>
-  <section><h2>入场、失效与目标</h2><div class="formula">{% if signal %}信号质量分：{{ signal.score }}/100（规则分，不是上涨概率）。<div>下一交易日开盘执行；参考价 {{ signal.entry_reference }}；失效位 {{ signal.stop_price or "--" }}；第一目标 {{ signal.target_1 or "--" }}；第二目标 {{ signal.target_2 or "--" }}；潜在盈亏比 {{ signal.reward_risk_ratio or "--" }}。</div>{% else %}当前没有已触发交易信号。{% endif %}</div></section>
+  <section><h2>当前结论与条件计划</h2><div class="formula"><strong>{{ decision.headline|default("暂无可执行交易结构") }}</strong><div>{{ decision.summary|default("当前结论是等待，而不是缺少分析结果。") }}</div><div>{{ decision.flat_action|default("空仓：暂不入场。") }}</div><div>{{ decision.holding_action|default("持仓：维持既有风控。") }}</div><div>触发条件：{{ decision.trigger_condition|default(none) or "当前无待确认 Trigger" }}</div><div>取消观察 / 风控：{{ decision.invalidation_condition|default(none) or "按既有止损管理" }}</div></div></section>
+  <section><h2>Trigger 执行计划</h2><div class="formula">{% if signal %}信号质量分：{{ signal.score }}/100（规则分，不是上涨概率）。<div>下一交易日开盘执行；参考价 {{ signal.entry_reference }}；失效位 {{ signal.stop_price or "--" }}；第一目标 {{ signal.target_1 or "--" }}；第二目标 {{ signal.target_2 or "--" }}；潜在盈亏比 {{ signal.reward_risk_ratio or "--" }}。</div>{% else %}尚未确认 Trigger，不预设入场价、止损和目标位。{% endif %}<div>{{ decision.validity_note|default("条件只按最新一根已收盘 K 线判断。") }}</div></div></section>
 </div>
 <div class="report-extra">
   <section><h2>历史类似信号统计</h2><div class="formula">样本 {{ history.sample_count or 0 }}；历史胜率 {{ history.win_rate if history.win_rate is not none else "--" }}%；历史期望 {{ history.expected_r if history.expected_r is not none else "--" }}R；有利波动中位数 {{ history.median_mfe_r if history.median_mfe_r is not none else "--" }}R；不利波动中位数 {{ history.median_mae_r if history.median_mae_r is not none else "--" }}R。<div>{{ history.note or "历史统计不代表未来收益。" }}</div></div></section>

@@ -77,6 +77,19 @@ def _payload() -> dict[str, object]:
                 "target_2": 13.3,
                 "reward_risk_ratio": 1.5,
             },
+            "current_decision": {
+                "status": "long_trigger",
+                "headline": "做多 Trigger 已收盘确认",
+                "summary": "严格规则已满足；这仍是确认事件，不是已成交记录。",
+                "flat_action": "空仓：仅考虑下一根 K 线在计划区间内执行。",
+                "holding_action": "持仓：继续按失效位管理，不重复加仓。",
+                "trigger_condition": None,
+                "invalidation_condition": None,
+                "trigger_price": None,
+                "invalidation_price": None,
+                "validity_note": "默认仅对下一根 K 线有效。",
+                "is_executable": True,
+            },
             "historical_similar": {
                 "sample_count": 42,
                 "win_rate": 61.9,
@@ -178,7 +191,8 @@ def _payload() -> dict[str, object]:
             "g.layout={shapes:[],annotations:[]};"
             "g.data=[{meta:{algorithm:'wave'},visible:true},"
             "{meta:{algorithm:'gann'},visible:false},"
-            "{meta:{algorithm:'wyckoff'},visible:false}];})();</script>"
+            "{meta:{algorithm:'wyckoff'},visible:false},"
+            "{meta:{overlay:'history_signals'},visible:'legendonly'}];})();</script>"
         ),
         "download_url": "/api/report/offline/download",
     }
@@ -211,6 +225,9 @@ def main() -> None:
             page.locator("#overview-setup").get_by_text("趋势回踩确认").wait_for()
             assert page.locator("#overview-setup").inner_text() == "趋势回踩确认"
             assert "¥12.18" in page.locator("#overview-entry-zone").inner_text()
+            assert "做多 Trigger 已收盘确认" in page.locator("#decision-banner").inner_text()
+            assert "空仓：" in page.locator("#decision-flat-action").inner_text()
+            assert page.locator("#execution-plan-details").get_attribute("open") is not None
             assert "自动结构锚点" in page.locator("#gann-analysis").inner_text()
             assert "吸筹候选" in page.locator("#wyckoff-analysis").inner_text()
             layout = page.evaluate(
@@ -261,15 +278,20 @@ def main() -> None:
             wave_button = page.locator('[data-algorithm="wave"]')
             gann_button = page.locator('[data-algorithm="gann"]')
             wyckoff_button = page.locator('[data-algorithm="wyckoff"]')
+            history_toggle = page.locator("#show-history-signals")
             assert wave_button.get_attribute("aria-pressed") == "true"
             assert gann_button.get_attribute("aria-pressed") == "false"
             assert wyckoff_button.get_attribute("aria-pressed") == "false"
+            assert not history_toggle.is_checked()
             gann_button.click()
             wave_button.click()
             wyckoff_button.click()
+            page.locator(".parameter-details summary").click()
+            history_toggle.check(force=True)
             assert gann_button.get_attribute("aria-pressed") == "true"
             assert wave_button.get_attribute("aria-pressed") == "false"
             assert wyckoff_button.get_attribute("aria-pressed") == "true"
+            assert history_toggle.is_checked()
             algorithm_relayouts = page.evaluate(
                 "document.querySelector('#chart .plotly-graph-div').__algorithmRelayouts || []"
             )
@@ -282,9 +304,15 @@ def main() -> None:
                 "document.querySelector('#chart .plotly-graph-div').data"
                 ".map((trace) => trace.visible)"
             )
-            assert visibility == [False, True, True]
+            assert visibility == [False, True, True, True]
+            history_toggle.uncheck(force=True)
+            visibility = page.evaluate(
+                "document.querySelector('#chart .plotly-graph-div').data"
+                ".map((trace) => trace.visible)"
+            )
+            assert visibility == [False, True, True, False]
             assert not page.locator(".factor-details").get_attribute("open")
-            audit_sections = page.locator(".audit-details")
+            audit_sections = page.locator(".audit-details:not(.execution-plan-details)")
             assert audit_sections.count() >= 4
             assert all(
                 audit_sections.nth(index).get_attribute("open") is None for index in range(3)
@@ -327,6 +355,25 @@ def main() -> None:
                   return data?.[0]?.visible === false && data?.[1]?.visible === true;
                 }"""
             )
+            pending_payload = _payload()
+            pending_payload["quant"]["current_signal"] = None
+            pending_payload["quant"]["current_decision"] = {
+                "status": "watch",
+                "headline": "交易结构观察中，尚未触发",
+                "summary": "当前识别到趋势回踩；只有收盘确认后才生成执行计划。",
+                "flat_action": "空仓：继续等待，不提前买入。",
+                "holding_action": "持仓：维持原有风控。",
+                "trigger_condition": "收盘站上上一根 K 线高点",
+                "invalidation_condition": "回踩结构不再成立",
+                "trigger_price": 12.8,
+                "invalidation_price": 11.8,
+                "validity_note": "条件只按最新一根已收盘 K 线判断。",
+                "is_executable": False,
+            }
+            page.evaluate("(data) => renderResult(data)", pending_payload)
+            assert "尚未触发" in page.locator("#decision-headline").inner_text()
+            assert "收盘站上" in page.locator("#decision-trigger").inner_text()
+            assert page.locator("#execution-plan-details").get_attribute("open") is None
             overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
             assert not overflow, f"{name} 存在横向溢出"
             assert not errors, f"{name} 控制台错误: {errors}"

@@ -16,6 +16,7 @@ from app.cache import SQLiteCache
 from app.charts import create_figure, render_figure_html
 from app.config import Settings, settings
 from app.data_provider import MarketDataProvider
+from app.decision import build_current_decision, resolve_current_signal
 from app.execution import ExecutionConfig
 from app.factors import build_factors, factor_snapshot
 from app.gann import analyze_gann
@@ -107,8 +108,16 @@ class AnalyzerService:
         strategy_backtest = run_strategy_backtest(enriched, signals, execution_config)
         latest_timestamp = pd.Timestamp(enriched["datetime"].iloc[-1]).to_pydatetime()
         current_signals = [signal for signal in signals if signal.timestamp == latest_timestamp]
-        current_signal = current_signals[0] if current_signals else None
         setup_items = current_setups(setup_frame)
+        current_signal, signal_conflict = resolve_current_signal(current_signals)
+        current_decision = build_current_decision(
+            enriched,
+            factors,
+            setup_items,
+            current_signals,
+            current_signal,
+            conflict=signal_conflict,
+        )
         similar_setup_names = (
             [current_signal.setup]
             if current_signal is not None
@@ -118,7 +127,8 @@ class AnalyzerService:
             strategy_backtest,
             similar_setup_names,
             current_signal.regime if current_signal is not None else regime["regime"],
-            triggered=current_signal is not None,
+            triggered=current_signal is not None
+            or any(bool(item["triggered"]) for item in setup_items),
         )
         if current_signal is not None and similar_stats["sample_count"] >= 30:
             current_signal.historical_probability = similar_stats["win_rate"] / 100
@@ -130,6 +140,10 @@ class AnalyzerService:
             "market_regime": regime,
             "current_setups": setup_items,
             "current_signal": current_signal.model_dump(mode="json") if current_signal else None,
+            "current_decision": current_decision,
+            "current_signal_conflict": [
+                item.model_dump(mode="json") for item in current_signals
+            ] if signal_conflict else [],
             "recent_signals": [item.model_dump(mode="json") for item in signals[-10:]],
             "signal_quality_score": current_signal.score if current_signal else None,
             "score_type": "RULE_SCORE",

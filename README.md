@@ -152,6 +152,8 @@ Indicator → Factor → Market Regime → Setup → Signal
 - `regime.py` 确定性识别 `UPTREND`、`DOWNTREND`、`RANGE`、`HIGH_VOLATILITY`、`LOW_VOLATILITY` 或 `INSUFFICIENT_DATA`。
 - `setups.py` 只定义 Trend Pullback、Breakout、Support Reversal、Trend Breakdown 四类结构，Setup 与收盘 Trigger 分开。
 - `signals.py` 生成统一 `TradingSignal`；页面展示的 Signal Quality Score 是规则质量分，不是上涨概率。只有历史样本达到最低数量时才单独显示历史概率。
+- 同一 Setup 连续有效的生命周期只记录首次 Trigger；Setup 失效后才允许新一轮触发。当前结论、图表标记和策略回测共用这一去重口径。图中的“历史做多 Trigger”是收盘确认事件，不代表实际成交；工作台默认关闭并归入 MA、BOLL、关键位所在的“图表叠加”，离线报告则通过 Plotly 技术线图例按需显示。
+- 即使最新 K 线没有 Trigger，工作台也会输出“等待 / 观察 / 持仓管理”等当前结论，并分别说明空仓与持仓计划；未触发时不伪造入场、止损或目标价格。
 - `execution.py` 处理下一根成交、手续费、滑点、T+1 和不可成交数据状态；当前 OHLCV 无法可靠区分所有涨跌停成交状态，因此保留明确 warning，不伪造成交规则。
 - `backtest.py` 生成完整 `TradeRecord`，`metrics.py` 计算 Expectancy、Profit Factor、回撤、累计/年化收益、Sharpe、MFE 和 MAE，并按 Regime 分组。
 - `research.py` 提供 Factor 分桶、训练集参数扫描、连续时间切分和基础 Walk Forward；禁止随机 shuffle，也不把全历史最优参数直接当作生产参数。
