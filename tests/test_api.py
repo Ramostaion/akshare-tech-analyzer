@@ -126,9 +126,12 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert body["quant"]["current_decision"]["headline"]
     assert body["quant"]["current_decision"]["flat_action"].startswith("空仓：")
     assert body["quant"]["current_decision"]["holding_action"].startswith("持仓：")
+    assert body["quant"]["current_decision"]["wyckoff_context"]["note"]
+    assert body["quant"]["current_decision"]["gann_context"]["note"]
     assert "expectancy_r" in body["quant"]["backtest"]["metrics"]
     assert body["quant"]["gann"]["status"] == "active"
-    assert body["quant"]["gann"]["anchor_mode"] == "auto_confirmed_pivot"
+    assert body["quant"]["gann"]["anchor_mode"] == "promoted_confirmed_pivot"
+    assert body["quant"]["gann"]["version"] == "2.1"
     assert body["quant"]["wyckoff"]["status"] == "active"
     assert body["analysis"]["technical_score_label"] == "Market / Technical State Score"
     assert body["analysis"]["state"] != "数据不足"
@@ -143,6 +146,7 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert "仅为算法技术分析结果，不构成投资建议" in report.text
     assert "江恩结构与后市情景" in report.text
     assert "威科夫结构与后市情景" in report.text
+    assert "威科夫结构生命周期回放" in report.text
     assert "report-algorithm-button" in report.text
     assert 'data-algorithm="history_signals"' not in report.text
     assert "fitPredictionView" not in report.text

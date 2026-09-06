@@ -62,6 +62,8 @@ def main() -> None:
                   waveShapesHidden: [...(graph?.layout?.shapes || [])]
                     .filter((shape) => String(shape.name || '').startsWith('algorithm-wave'))
                     .every((shape) => shape.visible === false),
+                  waveResolvedNote: [...(graph?.layout?.annotations || [])]
+                    .some((note) => note.name === 'algorithm-wave-resolved-note'),
                   priceAxisRange: graph?._fullLayout?.yaxis?.range || [],
                   gannRanges: traces
                     .filter((trace) => trace.meta?.algorithm === 'gann')
@@ -98,8 +100,10 @@ def main() -> None:
         traces = result["traces"]
         assert "候选 1" in result["waveText"]
         assert "浪形候选 Top-1" in traces
-        assert any(str(item).startswith("浪形情景 1") for item in traces)
-        assert any(str(item).startswith("浪形情景 2") for item in traces)
+        has_scenario = any(str(item).startswith("浪形情景 1") for item in traces)
+        assert has_scenario or result["waveResolvedNote"]
+        if has_scenario:
+            assert any(str(item).startswith("浪形情景 2") for item in traces)
         assert "江恩后续趋势 1×1" in traces
         assert result["gannVisible"]
         assert result["waveHidden"]
@@ -107,7 +111,8 @@ def main() -> None:
         assert result["gannTrendInRange"]
         minimum_pixels = 48 if result["viewport"] == "desktop" else 24
         assert result["gannTrendPixels"] >= minimum_pixels
-        assert result["waveScenarioPixels"] >= minimum_pixels
+        if has_scenario:
+            assert result["waveScenarioPixels"] >= minimum_pixels
         assert not result["overflow"]
         assert not result["errors"]
 

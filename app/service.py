@@ -19,7 +19,7 @@ from app.data_provider import MarketDataProvider
 from app.decision import build_current_decision, resolve_current_signal
 from app.execution import ExecutionConfig
 from app.factors import build_factors, factor_snapshot
-from app.gann import analyze_gann
+from app.gann import analyze_gann, gann_decision_context
 from app.indicators import add_indicators
 from app.levels import identify_levels
 from app.logging_config import get_logger
@@ -29,7 +29,7 @@ from app.report import build_report_html, safe_report_filename, write_report
 from app.setups import current_setups, evaluate_setups
 from app.signals import generate_signals
 from app.wave import analyze_wave_candidates
-from app.wyckoff import analyze_wyckoff
+from app.wyckoff import analyze_wyckoff, wyckoff_decision_context
 
 logger = get_logger("service")
 
@@ -135,6 +135,12 @@ class AnalyzerService:
         wave_analysis = analyze_wave_candidates(enriched)
         gann_analysis = analyze_gann(enriched)
         wyckoff_analysis = analyze_wyckoff(enriched)
+        current_decision["gann_context"] = gann_decision_context(
+            gann_analysis, str(current_decision["status"])
+        )
+        current_decision["wyckoff_context"] = wyckoff_decision_context(
+            wyckoff_analysis, str(current_decision["status"])
+        )
         quant = {
             "factor_snapshot": factor_snapshot(factors),
             "market_regime": regime,

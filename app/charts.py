@@ -94,7 +94,7 @@ def _default_price_y_range(
     gann: dict[str, Any],
     wyckoff: dict[str, Any] | None = None,
 ) -> tuple[float, float] | None:
-    """按近期行情及当前算法价位设置价格轴，避免全历史极值压扁情景路径。"""
+    """按近期行情及默认可见图层设置价格轴，避免隐藏投影压扁 K 线。"""
     if frame.empty:
         return None
     visible_bars = DEFAULT_VISIBLE_BARS.get(period, DEFAULT_INTRADAY_VISIBLE_BARS)
@@ -111,24 +111,8 @@ def _default_price_y_range(
             if projection.get(key) is not None:
                 values.append(float(projection[key]))
 
-    if gann.get("status") == "active":
-        values.extend(float(item["end_price"]) for item in gann.get("fan_lines", []))
-        for key in ("confirmation", "invalidation"):
-            if gann.get(key) is not None:
-                values.append(float(gann[key]))
-        nearest_levels = sorted(
-            gann.get("price_levels", []),
-            key=lambda item: abs(float(item["price"]) - float(frame["close"].iloc[-1])),
-        )[:5]
-        values.extend(float(item["price"]) for item in nearest_levels)
-
-    if wyckoff and wyckoff.get("status") == "active":
-        projection = wyckoff.get("projection", {})
-        values.extend(float(value) for value in projection.get("target_zone", []))
-        values.extend(float(value) for value in wyckoff.get("range", {}).values())
-        for key in ("confirmation", "invalidation"):
-            if projection.get(key) is not None:
-                values.append(float(projection[key]))
+    # 江恩与威科夫默认关闭。它们可能包含距离现价很远的冻结锚点或条件投影，
+    # 隐藏图层不应参与初始取景，否则理论线会反过来压缩真实价格走势。
 
     finite_values = [value for value in values if pd.notna(value)]
     if not finite_values:
@@ -885,13 +869,23 @@ def _add_gann_overlay(
     fan_colors = {"2×1": GANN_FAST_COLOR, "1×1": GANN_COLOR, "1×2": GANN_SLOW_COLOR}
     for item in fan_items:
         label = str(item["label"])
+        item_end = pd.Timestamp(item["end_time"])
+        start_price = float(item["start_price"])
+        item_end_price = float(item["end_price"])
+        source_span = (item_end - anchor_time).total_seconds()
+        display_span = (future_end - anchor_time).total_seconds()
+        display_end_price = (
+            start_price + (item_end_price - start_price) * display_span / source_span
+            if source_span > 0
+            else item_end_price
+        )
         figure.add_trace(
             go.Scatter(
                 x=[
-                    pd.Timestamp(item.get("current_time", item["start_time"])),
+                    pd.Timestamp(item["start_time"]),
                     future_end,
                 ],
-                y=[float(item.get("current_price", item["start_price"])), float(item["end_price"])],
+                y=[start_price, display_end_price],
                 mode="lines+text",
                 name=f"江恩后续趋势 {label}",
                 text=["", label],
@@ -912,6 +906,28 @@ def _add_gann_overlay(
             col=1,
         )
 
+    zones = gann.get("resonance_zones", [])
+    if zones:
+        figure.add_trace(
+            go.Scatter(
+                x=[pd.Timestamp(item["datetime"]) for item in zones],
+                y=[(float(item["lower"]) + float(item["upper"])) / 2 for item in zones],
+                mode="markers",
+                name="江恩时价共振区",
+                marker={"color": GANN_COLOR, "size": 11, "symbol": "diamond-open"},
+                text=[
+                    f"{item['angle']} · {item['bars']}根 · {item['price_fraction']}"
+                    for item in zones
+                ],
+                hovertemplate=(
+                    "江恩时价共振 %{text}<br>中心：%{y:.3f}"
+                    "<br>仅为条件观察区<extra></extra>"
+                ),
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
 
     level_end = future_end
     level_x: list[pd.Timestamp | None] = []
@@ -991,6 +1007,30 @@ def _add_gann_overlay(
             col=1,
         )
 
+    target_zone = gann.get("target_zone", [])
+    if len(target_zone) == 2:
+        figure.add_trace(
+            go.Scatter(
+                x=[latest_time, boundary_end, boundary_end, latest_time, latest_time],
+                y=[
+                    float(target_zone[0]),
+                    float(target_zone[0]),
+                    float(target_zone[1]),
+                    float(target_zone[1]),
+                    float(target_zone[0]),
+                ],
+                mode="lines",
+                fill="toself",
+                name="江恩确认后目标观察区",
+                line={"color": "rgba(192,132,252,0.35)", "width": 1},
+                fillcolor="rgba(192,132,252,0.08)",
+                hovertemplate="江恩确认后目标观察区 %{y:.3f}<extra></extra>",
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
+
 
 def _add_wyckoff_overlay(
     figure: go.Figure,
@@ -1021,7 +1061,9 @@ def _add_wyckoff_overlay(
         "visible": False,
     }
 
-    range_start = pd.Timestamp(frame["datetime"].iloc[max(0, len(frame) - 120)])
+    range_position = int(wyckoff["range"].get("start_position", max(0, len(frame) - 120)))
+    range_position = max(0, min(range_position, len(frame) - 1))
+    range_start = pd.Timestamp(frame["datetime"].iloc[range_position])
     figure.add_shape(
         name="algorithm-wyckoff-range",
         type="rect",
@@ -1044,7 +1086,12 @@ def _add_wyckoff_overlay(
                 text=[str(item["event"]) for item in events],
                 customdata=[
                     f"量比 {float(item['volume_ratio']):.2f} · "
-                    f"振幅 {float(item['spread_atr']):.2f} ATR"
+                    f"振幅 {float(item['spread_atr']):.2f} ATR · "
+                    + (
+                        "已获后续确认"
+                        if item.get("confirmation_state") == "follow_through_confirmed"
+                        else "仅收盘确认"
+                    )
                     for item in events
                 ],
                 mode="markers+text",
@@ -1063,10 +1110,22 @@ def _add_wyckoff_overlay(
         _time_fraction(current_time, future_time, 0.45),
         future_time,
     ]
-    continuation_y = [current_price, confirmation, target_midpoint]
+    already_confirmed = projection.get("confirmation_status") == "confirmed"
+    continuation_y = [
+        current_price,
+        current_price if already_confirmed else confirmation,
+        target_midpoint,
+    ]
     failure_y = [current_price, (current_price + confirmation) / 2, invalidation]
     for name, y_values, color, dash in (
-        ("威科夫情景 1：确认后延续", continuation_y, "#facc15", "solid"),
+        (
+            "威科夫情景 1：已确认后延续"
+            if already_confirmed
+            else "威科夫情景 1：等待确认后延续",
+            continuation_y,
+            "#facc15",
+            "solid",
+        ),
         ("威科夫情景 2：结构失败", failure_y, "#fb7185", "dash"),
     ):
         figure.add_trace(
@@ -1095,6 +1154,7 @@ def _add_wyckoff_overlay(
         text=(
             f"威科夫 {str(wyckoff.get('structure', '')).upper()} "
             f"Phase {wyckoff.get('phase', '--')}"
+            + (" · 双候选接近" if wyckoff.get("ambiguous") else "")
         ),
         showarrow=False,
         xanchor="right",
@@ -1181,7 +1241,8 @@ def create_figure(
     for column, color in (("VOL_MA5", "#fbbf24"), ("VOL_MA10", "#38bdf8")):
         figure.add_trace(
             go.Scatter(
-                x=frame["datetime"], y=frame[column], name=column, line={"color": color, "width": 1}
+                x=frame["datetime"], y=frame[column], name=column,
+                line={"color": color, "width": 1},
             ),
             row=2,
             col=1,
@@ -1202,14 +1263,16 @@ def create_figure(
     )
     figure.add_trace(
         go.Scatter(
-            x=frame["datetime"], y=frame["DIF"], name="DIF", line={"color": "#fbbf24", "width": 1.2}
+            x=frame["datetime"], y=frame["DIF"], name="DIF",
+            line={"color": "#fbbf24", "width": 1.2},
         ),
         row=3,
         col=1,
     )
     figure.add_trace(
         go.Scatter(
-            x=frame["datetime"], y=frame["DEA"], name="DEA", line={"color": "#38bdf8", "width": 1.2}
+            x=frame["datetime"], y=frame["DEA"], name="DEA",
+            line={"color": "#38bdf8", "width": 1.2},
         ),
         row=3,
         col=1,

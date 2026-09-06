@@ -98,6 +98,8 @@
               <div><dt>持仓计划</dt><dd id="decision-holding-action">--</dd></div>
               <div><dt>触发条件</dt><dd id="decision-trigger">--</dd></div>
               <div><dt>取消观察 / 风控条件</dt><dd id="decision-invalidation">--</dd></div>
+              <div><dt>江恩速度背景</dt><dd id="decision-gann-context">--</dd></div>
+              <div><dt>威科夫背景</dt><dd id="decision-wyckoff-context">--</dd></div>
             </dl>
             <details id="execution-plan-details" class="audit-details execution-plan-details">
               <summary>执行价格与历史统计 <span>仅在 Trigger 确认后执行</span></summary>
@@ -130,7 +132,7 @@
         <button class="algorithm-toggle active" type="button" data-algorithm="wave" aria-pressed="true"><i></i>波浪理论</button>
         <button class="algorithm-toggle" type="button" data-algorithm="gann" aria-pressed="false"><i></i>江恩理论</button>
         <button class="algorithm-toggle" type="button" data-algorithm="wyckoff" aria-pressed="false"><i></i>威科夫理论</button>
-        <span>按钮只控制图形显隐，不会重新计算或重置缩放</span>
+        <span>只控制图形显隐，不会重新计算或重置缩放</span>
       </div>
 
       <div id="chart" class="chart-shell"></div>

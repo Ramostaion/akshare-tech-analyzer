@@ -355,6 +355,7 @@ function renderGann(gann) {
     return;
   }
   const anchor = gann.anchor || {};
+  const referenceAnchor = anchor.reference_anchor || {};
   const scale = gann.scale || {};
   const history = gann.historical_validation || {};
   const direction = gann.direction === "down" ? "下行" : "上行";
@@ -362,22 +363,41 @@ function renderGann(gann) {
   const confirmedDate = anchor.confirmed_at
     ? new Date(anchor.confirmed_at).toLocaleDateString("zh-CN")
     : "--";
+  const referenceDate = referenceAnchor.timestamp
+    ? new Date(referenceAnchor.timestamp).toLocaleDateString("zh-CN")
+    : "--";
   const cycles = (gann.time_cycles || []).map((item) => `${item.bars}根`).join("、");
   const nearestLevels = [...(gann.price_levels || [])]
     .sort((left, right) => Math.abs(left.price - anchor.price) - Math.abs(right.price - anchor.price))
     .slice(0, 4)
     .map((item) => `${item.label}：${number(item.price, 3)}`)
     .join(" · ");
+  const alternatives = (gann.alternatives || [])
+    .map((item) => `${item.direction === "down" ? "下行" : "上行"} ${number(item.structural_fit * 100, 1)}/100`)
+    .join(" · ");
+  const score = gann.score_components || {};
+  const resonance = (gann.resonance_zones || [])
+    .map((item) => `${item.bars}根 ${item.angle} / ${item.price_fraction}：${number(item.lower, 3)}–${number(item.upper, 3)}`)
+    .join(" · ");
   renderRows("#gann-analysis", [
-    `自动结构锚点：${anchorDate} ${number(anchor.price, 3)}；${confirmedDate} 完成右侧确认`,
+    `江恩 V${gann.version || "1.0"} · 当前主锚：${anchorDate} ${number(anchor.price, 3)}；${confirmedDate} 完成右侧确认；距今 ${anchor.age_bars ?? "--"} 根`,
+    referenceAnchor.timestamp
+      ? `长期参考锚：${referenceDate} ${number(referenceAnchor.price, 3)}（不参与当前扇线绘制）`
+      : "长期参考锚：暂无独立于当前主锚的有效旧锚",
+    gann.anchor_selection_policy || "新的同向重要 Pivot 完成右侧确认后晋升为当前主锚。",
     `方向：${direction} · 当前状态：${gann.current_state_label || "等待确认"}`,
+    gann.ambiguous ? `双向候选接近：${alternatives}；暂不参与方向确认` : `候选评分：${alternatives || "--"}`,
     `归一化尺度：${scale.method || "ATR14/8 每根 K 线"}；1×1 单位 ${number(scale.unit_per_bar, 4)}`,
+    `评分构成：锚点 ${number(score.anchor_quality * 100, 1)} · 尺度贴合 ${number(score.scale_fit * 100, 1)} · 角线状态 ${number(score.angle_state * 100, 1)} · 确认 ${number(score.confirmation * 100, 1)}`,
     `收盘确认位：${number(gann.confirmation, 3)} · 结构失效位：${number(gann.invalidation, 3)}`,
+    `确认后目标观察区：${(gann.target_zone || []).map((value) => number(value, 3)).join("–") || "--"}`,
     `附近价格分割：${nearestLevels || "暂无"}`,
     `未来时间观察窗：${cycles || "当前锚点周期均已进入历史"}`,
+    `三因素时价共振区：${resonance || "当前没有角线、时间窗与价格分割重叠"}`,
     history.calibrated
-      ? `历史逐根回放：已决 ${history.resolved_count} 次，目标先达率 ${number(history.target_first_rate, 1)}%，目标中位用时 ${number(history.median_target_bars, 1)} 根。`
-      : `历史逐根回放：样本 ${history.sample_count || 0} 次、已决 ${history.resolved_count || 0} 次；样本不足，暂不展示概率。`,
+      ? `锚点生命周期回放：已决 ${history.resolved_count} 次，目标先达率 ${number(history.target_first_rate, 1)}%，MFE/MAE 中位 ${number(history.median_mfe_atr, 2)}/${number(history.median_mae_atr, 2)} ATR。`
+      : `锚点生命周期回放：样本 ${history.sample_count || 0} 次、已决 ${history.resolved_count || 0} 次；角线触及 ${history.angle_touch_count || 0} 次，样本不足暂不展示概率。`,
+    history.sampling_policy,
     gann.note,
   ]);
 }
@@ -391,17 +411,38 @@ function renderWyckoff(wyckoff) {
   const projection = wyckoff.projection || {};
   const history = wyckoff.historical_validation || {};
   const structure = wyckoff.structure === "accumulation" ? "吸筹候选" : "派发候选";
-  const events = (wyckoff.events || []).map((item) => item.event).join(" → ");
+  const events = (wyckoff.events || []).map((item) => (
+    `${item.event}${item.confirmation_state === "follow_through_confirmed" ? "✓" : ""}`
+  )).join(" → ");
+  const quality = range.quality || {};
+  const scores = wyckoff.score_components || {};
+  const alternative = (wyckoff.alternatives || [])[1];
+  const alternativeLabel = alternative?.structure === "accumulation" ? "吸筹候选" : "派发候选";
+  const confirmationState = projection.confirmation_status === "confirmed"
+    ? `已确认${projection.confirmed_at ? `（${projection.confirmed_at.slice(0, 10)}）` : ""}`
+    : "等待收盘确认";
   renderRows("#wyckoff-analysis", [
-    `${structure} · Phase ${wyckoff.phase || "--"} · 当前事件：${wyckoff.current_event || "--"}`,
+    `威科夫 V${wyckoff.version || "1.0"} · ${structure} · Phase ${wyckoff.phase || "--"} · 当前事件：${wyckoff.current_event || "--"}`,
+    wyckoff.ambiguous
+      ? `双候选接近：当前分差 ${number((wyckoff.score_gap || 0) * 100, 1)} 分，不作为独立方向确认`
+      : `候选领先：${alternative ? `领先另一候选 ${number((wyckoff.score_gap || 0) * 100, 1)} 分` : "无可比候选"}`,
+    alternative
+      ? `另一候选：${alternativeLabel} · Phase ${alternative.phase || "--"} · 匹配度${number((alternative.structural_fit || 0) * 100, 1)}/100`
+      : "另一候选：无",
     `结构匹配度：${number((wyckoff.structural_fit || 0) * 100, 1)}/100（非概率）`,
-    `交易区间：${number(range.support, 3)}–${number(range.resistance, 3)}`,
-    `近期事件：${events || "尚无关键事件"}`,
-    `确认位：${number(projection.confirmation, 3)} · 失效位：${number(projection.invalidation, 3)}`,
-    `目标观察区：${(projection.target_zone || []).map((value) => number(value, 3)).join("–")}`,
+    `评分构成：区间${number(scores.range_stability, 1)} · 顺序${number(scores.event_sequence, 1)} · 量价${number(scores.volume_price_quality, 1)} · 跟随${number(scores.follow_through, 1)} · 冲突扣分${number(scores.conflict_penalty, 1)}`,
+    `冻结交易区间：${number(range.support, 3)}–${number(range.resistance, 3)} · 已持续${range.age_bars || "--"}根 · 包含率${number((quality.containment || 0) * 100, 1)}%`,
+    `边界测试：支撑${quality.support_tests || 0}次 · 阻力${quality.resistance_tests || 0}次 · 区间宽${number(quality.width_atr, 1)} ATR`,
+    `事件链：${events || "尚无关键事件"}（✓ 表示已获后续行为确认）`,
+    `路径状态：${confirmationState} · 确认位${number(projection.confirmation, 3)} · 失效位${number(projection.invalidation, 3)}（${projection.invalidation_basis || "区间边界"}）`,
+    `目标观察区：${(projection.target_zone || []).map((value) => number(value, 3)).join("–")} · ${projection.target_method || "区间宽度条件投影"}`,
+    history.confirmation_calibrated
+      ? `历史结构确认率：${number(history.confirmation_rate, 1)}% · 生命周期样本${history.sample_count}`
+      : `历史结构确认：样本${history.sample_count || 0}，少于30次不展示确认率`,
     history.calibrated
-      ? `历史目标先达率：${number(history.target_first_rate, 1)}% · 样本${history.sample_count}`
-      : `历史回放：已决${history.resolved_count || 0}次，少于30次不展示概率`,
+      ? `确认后目标先达率：${number(history.target_first_rate, 1)}% · 已决${history.confirmed_resolved_count}`
+      : `确认后回放：已决${history.confirmed_resolved_count || 0}次，少于30次不展示目标先达率`,
+    history.sampling_policy || "历史样本按结构生命周期去重。",
     wyckoff.note,
   ]);
 }
@@ -462,6 +503,14 @@ function renderQuant(quant, security) {
   setText("#decision-invalidation", decision.invalidation_condition
     ? `${decision.invalidation_condition}${invalidationPrice}`
     : "按既有止损或下一次分析更新");
+  setText(
+    "#decision-gann-context",
+    decision.gann_context?.note || "当前未提供江恩速度证据",
+  );
+  setText(
+    "#decision-wyckoff-context",
+    decision.wyckoff_context?.note || "当前未提供威科夫方向证据",
+  );
   setText("#decision-validity", decision.validity_note);
   document.querySelector("#execution-plan-details").open = Boolean(decision.is_executable);
   setText("#overview-setup", activeSetup);

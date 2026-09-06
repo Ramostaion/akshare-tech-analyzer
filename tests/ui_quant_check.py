@@ -89,6 +89,21 @@ def _payload() -> dict[str, object]:
                 "invalidation_price": None,
                 "validity_note": "默认仅对下一根 K 线有效。",
                 "is_executable": True,
+                "wave_context": {
+                    "bias": "up",
+                    "alignment": "supportive",
+                    "note": "上行 Wave 5 形成阶段，与当前 Trigger 方向一致。",
+                },
+                "gann_context": {
+                    "bias": "up",
+                    "alignment": "supportive",
+                    "note": "上行固定角线保持在 1×1 有利侧，与当前 Trigger 方向一致。",
+                },
+                "wyckoff_context": {
+                    "bias": "up",
+                    "alignment": "supportive",
+                    "note": "吸筹候选进入 Phase D，与当前 Trigger 方向一致。",
+                },
             },
             "historical_similar": {
                 "sample_count": 42,
@@ -112,6 +127,10 @@ def _payload() -> dict[str, object]:
                 }
             },
             "wave": {
+                "version": "3.0",
+                "ambiguous": False,
+                "retired_count": 2,
+                "candidate_policy": "最近九个已确认 Pivot 内有限竞争。",
                 "candidates": [
                     {
                         "pattern": "unfinished_impulse",
@@ -121,6 +140,17 @@ def _payload() -> dict[str, object]:
                         "scale": "标准尺度",
                         "current_state": "waiting",
                         "current_state_label": "等待收盘确认",
+                        "age_bars": 4,
+                        "lifecycle_id": "unfinished_impulse:up:2026-06-01",
+                        "scale_agreement": 2,
+                        "supporting_scales": ["标准尺度", "宽尺度"],
+                        "skipped_pivots": 0,
+                        "score_components": {
+                            "fib_ratio": 0.7,
+                            "momentum_volume": 0.8,
+                            "duration_balance": 0.75,
+                            "pivot_quality": 0.9,
+                        },
                         "confidence": 0.72,
                         "projection": {
                             "primary_zone": [13.4, 13.8],
@@ -139,7 +169,9 @@ def _payload() -> dict[str, object]:
             },
             "gann": {
                 "status": "active",
-                "anchor_mode": "auto_confirmed_pivot",
+                "version": "2.1",
+                "anchor_mode": "promoted_confirmed_pivot",
+                "anchor_selection_policy": "新的同向重要 Pivot 完成右侧确认后晋升为当前主锚。",
                 "direction": "up",
                 "anchor": {
                     "timestamp": "2026-07-01T00:00:00",
@@ -160,27 +192,80 @@ def _payload() -> dict[str, object]:
                 "confirmation": 12.8,
                 "invalidation": 11.9,
                 "current_state_label": "等待收盘突破确认位",
+                "alternatives": [
+                    {"direction": "up", "structural_fit": 0.72},
+                    {"direction": "down", "structural_fit": 0.55},
+                ],
+                "ambiguous": False,
+                "structural_fit": 0.72,
+                "score_components": {
+                    "anchor_quality": 0.7,
+                    "scale_fit": 0.6,
+                    "angle_state": 0.65,
+                    "confirmation": 0.45,
+                    "resonance": 0.5,
+                },
+                "resonance_zones": [],
                 "historical_validation": {
                     "sample_count": 9,
                     "resolved_count": 7,
+                    "angle_touch_count": 4,
                     "calibrated": False,
+                    "sampling_policy": "每个右确认晋升主锚生命周期只采样一次。",
                 },
                 "note": "角线采用 ATR 归一化。",
             },
             "wyckoff": {
                 "status": "active",
+                "version": "2.0",
                 "structure": "accumulation",
                 "phase": "C",
                 "current_event": "Spring",
                 "structural_fit": 0.76,
-                "range": {"support": 11.9, "resistance": 12.8},
-                "events": [{"event": "Spring"}],
+                "ambiguous": False,
+                "score_gap": 0.14,
+                "score_components": {
+                    "range_stability": 82,
+                    "event_sequence": 78,
+                    "volume_price_quality": 73,
+                    "follow_through": 65,
+                    "conflict_penalty": 4,
+                },
+                "alternatives": [
+                    {"structure": "accumulation", "structural_fit": 0.76},
+                    {"structure": "distribution", "structural_fit": 0.62},
+                ],
+                "range": {
+                    "support": 11.9,
+                    "resistance": 12.8,
+                    "age_bars": 68,
+                    "quality": {
+                        "containment": 0.86,
+                        "support_tests": 3,
+                        "resistance_tests": 4,
+                        "width_atr": 4.5,
+                    },
+                },
+                "events": [
+                    {"event": "Spring", "confirmation_state": "follow_through_confirmed"}
+                ],
                 "projection": {
                     "confirmation": 12.8,
                     "invalidation": 11.7,
                     "target_zone": [13.25, 13.7],
+                    "confirmation_status": "confirmed",
+                    "confirmed_at": "2026-08-20T00:00:00",
+                    "invalidation_basis": "LPS 回测低点",
+                    "target_method": "冻结交易区间宽度的条件投影",
                 },
-                "historical_validation": {"resolved_count": 8, "calibrated": False},
+                "historical_validation": {
+                    "sample_count": 12,
+                    "confirmation_count": 8,
+                    "confirmation_calibrated": False,
+                    "confirmed_resolved_count": 7,
+                    "calibrated": False,
+                    "sampling_policy": "每个冻结交易区间和方向只采样一次",
+                },
                 "note": "威科夫量价结构候选。",
             },
         },
@@ -228,8 +313,13 @@ def main() -> None:
             assert "做多 Trigger 已收盘确认" in page.locator("#decision-banner").inner_text()
             assert "空仓：" in page.locator("#decision-flat-action").inner_text()
             assert page.locator("#execution-plan-details").get_attribute("open") is not None
-            assert "自动结构锚点" in page.locator("#gann-analysis").inner_text()
+            assert "江恩 V2.1" in page.locator("#gann-analysis").inner_text()
+            assert "每个右确认晋升主锚生命周期" in page.locator("#gann-analysis").inner_text()
             assert "吸筹候选" in page.locator("#wyckoff-analysis").inner_text()
+            assert "威科夫 V2.0" in page.locator("#wyckoff-analysis").inner_text()
+            assert "每个冻结交易区间" in page.locator("#wyckoff-analysis").inner_text()
+            assert "Phase D" in page.locator("#decision-wyckoff-context").inner_text()
+            assert "1×1 有利侧" in page.locator("#decision-gann-context").inner_text()
             layout = page.evaluate(
                 """() => ({
                   decisionTop: document.querySelector('.decision-grid').getBoundingClientRect().top,
