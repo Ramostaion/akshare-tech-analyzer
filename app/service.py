@@ -20,6 +20,7 @@ from app.decision import build_current_decision, resolve_current_signal
 from app.execution import ExecutionConfig
 from app.factors import build_factors, factor_snapshot
 from app.gann import analyze_gann, gann_decision_context
+from app.gann.snapshots import build_snapshot
 from app.indicators import add_indicators
 from app.levels import identify_levels
 from app.logging_config import get_logger
@@ -133,7 +134,11 @@ class AnalyzerService:
         if current_signal is not None and similar_stats["sample_count"] >= 30:
             current_signal.historical_probability = similar_stats["win_rate"] / 100
         wave_analysis = analyze_wave_candidates(enriched)
-        gann_analysis = analyze_gann(enriched)
+        gann_analysis = analyze_gann(enriched, request.period, levels)
+        if gann_analysis.get("status") == "active":
+            gann_snapshot = build_snapshot(request.symbol, request.period, gann_analysis)
+            self.cache.save_gann_snapshot(gann_snapshot)
+            gann_analysis["prediction_snapshot"] = gann_snapshot
         wyckoff_analysis = analyze_wyckoff(enriched)
         current_decision["gann_context"] = gann_decision_context(
             gann_analysis, str(current_decision["status"])

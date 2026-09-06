@@ -24,9 +24,7 @@ def test_buy_triggers_are_marked_and_exit_signals_are_excluded(market_frame) -> 
     enriched = add_indicators(market_frame)
     factors = build_factors(enriched)
     position = len(enriched) - 1
-    buy_signal = create_signal(
-        "600011", enriched, factors, position, "trend_pullback", "UPTREND"
-    )
+    buy_signal = create_signal("600011", enriched, factors, position, "trend_pullback", "UPTREND")
     exit_signal = create_signal(
         "600011", enriched, factors, position, "trend_breakdown", "DOWNTREND"
     )
@@ -187,6 +185,7 @@ def test_gann_overlay_is_grouped_and_hidden_by_default(market_frame) -> None:
                 "current_price": float(frame["close"].iloc[-1]),
                 "end_time": latest + pd.Timedelta(days=24),
                 "end_price": end_price,
+                "default_visible": True,
             }
             for label, end_price in (("2×1", 20.0), ("1×1", 18.0), ("1×2", 17.0))
         ],
@@ -194,7 +193,16 @@ def test_gann_overlay_is_grouped_and_hidden_by_default(market_frame) -> None:
             {"label": "50.0%", "price": 18.0},
             {"label": "100.0%", "price": 20.0},
         ],
-        "time_cycles": [{"bars": 24, "datetime": latest + pd.Timedelta(days=8)}],
+        "time_windows": [
+            {
+                "label": "1T",
+                "base_cycle": 8,
+                "score": 78,
+                "start_datetime": latest + pd.Timedelta(days=7),
+                "center_datetime": latest + pd.Timedelta(days=8),
+                "end_datetime": latest + pd.Timedelta(days=9),
+            }
+        ],
         "confirmation": 18.0,
         "invalidation": 16.0,
     }
@@ -203,26 +211,29 @@ def test_gann_overlay_is_grouped_and_hidden_by_default(market_frame) -> None:
     _add_gann_overlay(figure, frame, gann)
 
     names = [trace.name for trace in figure.data]
-    assert "江恩自动确认锚点" in names
-    assert "江恩后续趋势 1×1" in names
-    assert "江恩价格分割" in names
+    assert "江恩确认锚点" in names
+    assert "江恩角线 1×1" in names
+    assert "江恩重要价格位" in names
     assert "江恩时间观察窗" in names
     gann_traces = [
         trace for trace in figure.data if trace.meta and trace.meta["algorithm"] == "gann"
     ]
     assert all(trace.visible is False for trace in gann_traces)
-    trends = [trace for trace in gann_traces if str(trace.name).startswith("江恩后续趋势")]
-    assert all(pd.Timestamp(trace.x[0]) == pd.Timestamp(latest) for trace in trends)
-    assert all(float(trace.y[0]) == float(frame["close"].iloc[-1]) for trace in trends)
-    minimum_end = pd.Timestamp(latest) + (
-        pd.Timestamp(latest) - pd.Timestamp(frame["datetime"].iloc[-220])
-    ) * 0.15
-    assert all(pd.Timestamp(trace.x[-1]) >= minimum_end for trace in trends)
-    assert all(float(trace.y[-1]) == end_price for trace, end_price in zip(
-        trends,
-        (20.0, 18.0, 17.0),
-        strict=True,
-    ))
+    trends = [trace for trace in gann_traces if str(trace.name).startswith("江恩角线")]
+    assert all(pd.Timestamp(trace.x[0]) == pd.Timestamp(anchor_time) for trace in trends)
+    assert all(float(trace.y[0]) == 16.0 for trace in trends)
+    assert all(
+        pd.Timestamp(trace.x[-1]) == pd.Timestamp(latest + pd.Timedelta(days=24))
+        for trace in trends
+    )
+    assert all(
+        float(trace.y[-1]) == end_price
+        for trace, end_price in zip(
+            trends,
+            (20.0, 18.0, 17.0),
+            strict=True,
+        )
+    )
     padding = next(trace for trace in figure.data if trace.name == "江恩未来显示空间")
     assert padding.opacity == 0
     assert padding.meta is None

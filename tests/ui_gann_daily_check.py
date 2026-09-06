@@ -101,7 +101,7 @@ def main() -> None:
               const xa = graph._fullLayout.xaxis;
               const ya = graph._fullLayout.yaxis;
               const trends = graph.data.filter((trace) =>
-                String(trace.name || '').startsWith('江恩后续趋势'));
+                String(trace.name || '').startsWith('江恩角线'));
               return {
                 count: trends.length,
                 visible: trends.every((trace) => trace.visible === true),

@@ -57,7 +57,7 @@ def main() -> None:
                   const graph = document.querySelector('.plotly-graph-div');
                   const traces = [...(graph.data || [])];
                   const trends = traces.filter((trace) =>
-                    String(trace.name || '').startsWith('江恩后续趋势'));
+                    String(trace.name || '').startsWith('江恩角线'));
                   const xa = graph._fullLayout.xaxis;
                   const ya = graph._fullLayout.yaxis;
                   return {

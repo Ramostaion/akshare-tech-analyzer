@@ -79,8 +79,47 @@ class SQLiteCache:
                     metadata_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS gann_prediction_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    snapshot_time TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_gann_snapshot_lookup
+                    ON gann_prediction_snapshots(symbol, timeframe, snapshot_time);
                 """
             )
+
+    def save_gann_snapshot(self, snapshot: dict[str, Any]) -> bool:
+        """只增不改地保存预测快照；相同 ID 的旧预测不会被未来数据覆盖。"""
+        snapshot_id = str(snapshot["snapshot_id"])
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                INSERT OR IGNORE INTO gann_prediction_snapshots
+                    (snapshot_id, symbol, timeframe, snapshot_time, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    str(snapshot["symbol"]),
+                    str(snapshot["timeframe"]),
+                    str(snapshot["timestamp"]),
+                    json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+        return cursor.rowcount == 1
+
+    def get_gann_snapshot(self, snapshot_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload_json FROM gann_prediction_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        return json.loads(row["payload_json"]) if row else None
 
     def get_history_series(self, key: str) -> HistorySeriesEntry | None:
         """读取不随查询区间拆分的持久历史序列。"""

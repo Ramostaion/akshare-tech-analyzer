@@ -351,55 +351,56 @@ function renderGann(gann) {
   const target = document.querySelector("#gann-analysis");
   target.replaceChildren();
   if (!gann || gann.status !== "active") {
-    renderRows("#gann-analysis", [gann?.note || "暂无足够的已确认高低点。"]);
+    renderRows("#gann-analysis", [gann?.note || "暂无已确认江恩锚点。"]);
     return;
   }
   const anchor = gann.anchor || {};
-  const referenceAnchor = anchor.reference_anchor || {};
   const scale = gann.scale || {};
   const history = gann.historical_validation || {};
+  const angleStudy = history.angle_events || {};
+  const timeStudy = history.time_windows || {};
+  const walkForward = history.walk_forward || {};
   const direction = gann.direction === "down" ? "下行" : "上行";
   const anchorDate = anchor.timestamp ? new Date(anchor.timestamp).toLocaleDateString("zh-CN") : "--";
-  const confirmedDate = anchor.confirmed_at
-    ? new Date(anchor.confirmed_at).toLocaleDateString("zh-CN")
-    : "--";
-  const referenceDate = referenceAnchor.timestamp
-    ? new Date(referenceAnchor.timestamp).toLocaleDateString("zh-CN")
-    : "--";
-  const cycles = (gann.time_cycles || []).map((item) => `${item.bars}根`).join("、");
-  const nearestLevels = [...(gann.price_levels || [])]
-    .sort((left, right) => Math.abs(left.price - anchor.price) - Math.abs(right.price - anchor.price))
-    .slice(0, 4)
-    .map((item) => `${item.label}：${number(item.price, 3)}`)
+  const confirmedDate = anchor.confirmed_at ? new Date(anchor.confirmed_at).toLocaleDateString("zh-CN") : "--";
+  const relation = Object.entries(gann.angle_relation || {})
+    .map(([angle, side]) => `${angle} ${side}`).join(" · ");
+  const windows = (gann.time_windows || []).slice(0, 4)
+    .map((item) => `${item.label}：未来 ${item.bars_from_now} 根附近（评分 ${number(item.score, 1)}）`)
+    .join(" · ");
+  const zones = (gann.confluence_zones || []).slice(0, 3)
+    .map((item) => `${number(item.lower, 3)}–${number(item.upper, 3)} / ${item.time_window.label} / ${number(item.score, 1)}分`)
     .join(" · ");
   const alternatives = (gann.alternatives || [])
-    .map((item) => `${item.direction === "down" ? "下行" : "上行"} ${number(item.structural_fit * 100, 1)}/100`)
+    .map((item) => `${item.direction === "down" ? "下行" : "上行"}锚 ${number(item.anchor?.score, 1)}/100`)
     .join(" · ");
-  const score = gann.score_components || {};
-  const resonance = (gann.resonance_zones || [])
-    .map((item) => `${item.bars}根 ${item.angle} / ${item.price_fraction}：${number(item.lower, 3)}–${number(item.upper, 3)}`)
-    .join(" · ");
-  renderRows("#gann-analysis", [
-    `江恩 V${gann.version || "1.0"} · 当前主锚：${anchorDate} ${number(anchor.price, 3)}；${confirmedDate} 完成右侧确认；距今 ${anchor.age_bars ?? "--"} 根`,
-    referenceAnchor.timestamp
-      ? `长期参考锚：${referenceDate} ${number(referenceAnchor.price, 3)}（不参与当前扇线绘制）`
-      : "长期参考锚：暂无独立于当前主锚的有效旧锚",
-    gann.anchor_selection_policy || "新的同向重要 Pivot 完成右侧确认后晋升为当前主锚。",
-    `方向：${direction} · 当前状态：${gann.current_state_label || "等待确认"}`,
-    gann.ambiguous ? `双向候选接近：${alternatives}；暂不参与方向确认` : `候选评分：${alternatives || "--"}`,
-    `归一化尺度：${scale.method || "ATR14/8 每根 K 线"}；1×1 单位 ${number(scale.unit_per_bar, 4)}`,
-    `评分构成：锚点 ${number(score.anchor_quality * 100, 1)} · 尺度贴合 ${number(score.scale_fit * 100, 1)} · 角线状态 ${number(score.angle_state * 100, 1)} · 确认 ${number(score.confirmation * 100, 1)}`,
-    `收盘确认位：${number(gann.confirmation, 3)} · 结构失效位：${number(gann.invalidation, 3)}`,
-    `确认后目标观察区：${(gann.target_zone || []).map((value) => number(value, 3)).join("–") || "--"}`,
-    `附近价格分割：${nearestLevels || "暂无"}`,
-    `未来时间观察窗：${cycles || "当前锚点周期均已进入历史"}`,
-    `三因素时价共振区：${resonance || "当前没有角线、时间窗与价格分割重叠"}`,
-    history.calibrated
-      ? `锚点生命周期回放：已决 ${history.resolved_count} 次，目标先达率 ${number(history.target_first_rate, 1)}%，MFE/MAE 中位 ${number(history.median_mfe_atr, 2)}/${number(history.median_mae_atr, 2)} ATR。`
-      : `锚点生命周期回放：样本 ${history.sample_count || 0} 次、已决 ${history.resolved_count || 0} 次；角线触及 ${history.angle_touch_count || 0} 次，样本不足暂不展示概率。`,
-    history.sampling_policy,
+  const rows = [
+    `江恩 Price-Time V${gann.version || "3.0"} · ${direction}主锚 ${anchorDate} ${number(anchor.price, 3)} · ${confirmedDate} 后可用`,
+    `Anchor Score：${number(anchor.score, 1)}/100${gann.low_confidence_anchor ? "（低权重）" : ""} · ${alternatives}`,
+    `价格单位：${scale.method || "ATR(14) × 0.25 / bar"} · 时间单位：1 根实际 K 线`,
+    `市场状态：${gann.current_state_label || "中性"} · ${relation || "角线关系不可用"}`,
+    `主预测长度：${gann.forecast_horizon?.main_bars || "--"} 根 · 硬上限 ${gann.forecast_horizon?.hard_cap_bars || "--"} 根`,
+    `时间观察窗：${windows || "当前预测范围内没有高评分窗口"}`,
+    `时价共振区：${zones || "当前没有角线、价格因素与时间窗的三重重合"}`,
+    `角线事件回放：${angleStudy.sample_count || 0} 次；5 根方向准确率 ${angleStudy.horizon_5?.direction_accuracy ?? "样本不足"}${angleStudy.horizon_5?.direction_accuracy != null ? "%" : ""}`,
+    `时间窗反转率：${timeStudy.reversal_rate ?? "样本不足"}${timeStudy.reversal_rate != null ? "%" : ""}；随机基线 ${timeStudy.random_baseline_reversal_rate ?? "样本不足"}${timeStudy.random_baseline_reversal_rate != null ? "%" : ""}`,
+    walkForward.available
+      ? `样本外：${walkForward.out_of_sample?.sample_count || 0} 次；方向准确率 ${walkForward.out_of_sample?.direction_accuracy ?? "样本不足"}${walkForward.out_of_sample?.direction_accuracy != null ? "%" : ""}`
+      : walkForward.note,
     gann.note,
-  ]);
+  ];
+  (gann.scenarios || []).forEach((scenario, index) => {
+    const targets = (scenario.target_zones || [])
+      .map((zone) => zone.map((value) => number(value, 3)).join("–")).join("、");
+    const scenarioWindows = (scenario.time_windows || []).slice(0, 2)
+      .map((item) => `${item.label} +${item.bars_from_now}根`).join("、");
+    rows.push(
+      `情景 ${index + 1} · ${scenario.name} · 相对置信度 ${number(scenario.confidence * 100, 1)}%（未校准）`,
+      `触发：${scenario.trigger}；确认：${scenario.confirmation}`,
+      `目标区：${targets || "--"}；时间窗：${scenarioWindows || "--"}；失效：${scenario.invalidation}`,
+    );
+  });
+  renderRows("#gann-analysis", rows.filter(Boolean));
 }
 
 function renderWyckoff(wyckoff) {

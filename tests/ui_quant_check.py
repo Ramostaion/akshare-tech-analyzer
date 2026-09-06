@@ -169,32 +169,38 @@ def _payload() -> dict[str, object]:
             },
             "gann": {
                 "status": "active",
-                "version": "2.1",
-                "anchor_mode": "promoted_confirmed_pivot",
+                "version": "3.0",
+                "anchor_mode": "confirmed_atr_zigzag_scored",
                 "anchor_selection_policy": "新的同向重要 Pivot 完成右侧确认后晋升为当前主锚。",
                 "direction": "up",
                 "anchor": {
                     "timestamp": "2026-07-01T00:00:00",
                     "confirmed_at": "2026-07-04T00:00:00",
                     "price": 11.9,
+                    "score": 78.0,
                 },
                 "scale": {
                     "atr": 0.4,
                     "unit_per_bar": 0.05,
-                    "method": "ATR14/8 每根 K 线",
+                    "method": "ATR(14) × 0.25 / bar",
                 },
                 "fan_lines": [],
                 "price_levels": [
                     {"label": "50.0%", "price": 12.5},
                     {"label": "100.0%", "price": 13.1},
                 ],
-                "time_cycles": [{"bars": 24, "datetime": "2026-09-01T00:00:00"}],
+                "time_windows": [{
+                    "label": "1T", "base_cycle": 12, "bars_from_now": 8,
+                    "score": 78,
+                }],
+                "forecast_horizon": {"main_bars": 15, "hard_cap_bars": 30},
+                "angle_relation": {"2×1": "不利侧", "1×1": "有利侧", "1×2": "有利侧"},
                 "confirmation": 12.8,
                 "invalidation": 11.9,
                 "current_state_label": "等待收盘突破确认位",
                 "alternatives": [
-                    {"direction": "up", "structural_fit": 0.72},
-                    {"direction": "down", "structural_fit": 0.55},
+                    {"direction": "up", "anchor": {"score": 78}, "structural_fit": 0.72},
+                    {"direction": "down", "anchor": {"score": 63}, "structural_fit": 0.55},
                 ],
                 "ambiguous": False,
                 "structural_fit": 0.72,
@@ -205,13 +211,26 @@ def _payload() -> dict[str, object]:
                     "confirmation": 0.45,
                     "resonance": 0.5,
                 },
-                "resonance_zones": [],
+                "confluence_zones": [],
+                "scenarios": [{
+                    "name": "突破并站稳 1×1", "confidence": 0.62,
+                    "trigger": "收盘高于当前 1×1", "confirmation": "连续 2 根收盘确认",
+                    "target_zones": [[13.4, 13.8]], "time_windows": [],
+                    "invalidation": "收盘跌破 1×2",
+                }],
                 "historical_validation": {
                     "sample_count": 9,
                     "resolved_count": 7,
-                    "angle_touch_count": 4,
+                    "angle_events": {
+                        "sample_count": 9,
+                        "horizon_5": {"direction_accuracy": 55.6},
+                    },
+                    "time_windows": {
+                        "reversal_rate": 60.0,
+                        "random_baseline_reversal_rate": 42.0,
+                    },
+                    "walk_forward": {"available": False, "note": "样本不足。"},
                     "calibrated": False,
-                    "sampling_policy": "每个右确认晋升主锚生命周期只采样一次。",
                 },
                 "note": "角线采用 ATR 归一化。",
             },
@@ -313,8 +332,8 @@ def main() -> None:
             assert "做多 Trigger 已收盘确认" in page.locator("#decision-banner").inner_text()
             assert "空仓：" in page.locator("#decision-flat-action").inner_text()
             assert page.locator("#execution-plan-details").get_attribute("open") is not None
-            assert "江恩 V2.1" in page.locator("#gann-analysis").inner_text()
-            assert "每个右确认晋升主锚生命周期" in page.locator("#gann-analysis").inner_text()
+            assert "江恩 Price-Time V3.0" in page.locator("#gann-analysis").inner_text()
+            assert "随机基线" in page.locator("#gann-analysis").inner_text()
             assert "吸筹候选" in page.locator("#wyckoff-analysis").inner_text()
             assert "威科夫 V2.0" in page.locator("#wyckoff-analysis").inner_text()
             assert "每个冻结交易区间" in page.locator("#wyckoff-analysis").inner_text()

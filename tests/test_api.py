@@ -130,8 +130,10 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert body["quant"]["current_decision"]["gann_context"]["note"]
     assert "expectancy_r" in body["quant"]["backtest"]["metrics"]
     assert body["quant"]["gann"]["status"] == "active"
-    assert body["quant"]["gann"]["anchor_mode"] == "promoted_confirmed_pivot"
-    assert body["quant"]["gann"]["version"] == "2.1"
+    assert body["quant"]["gann"]["anchor_mode"] == "confirmed_atr_zigzag_scored"
+    assert body["quant"]["gann"]["version"] == "3.0"
+    assert len(body["quant"]["gann"]["scenarios"]) == 2
+    assert body["quant"]["gann"]["prediction_snapshot"]["immutable"] is True
     assert body["quant"]["wyckoff"]["status"] == "active"
     assert body["analysis"]["technical_score_label"] == "Market / Technical State Score"
     assert body["analysis"]["state"] != "数据不足"
@@ -144,7 +146,7 @@ def test_analyze_and_offline_report(tmp_path, market_frame) -> None:
     assert "__akshareShapeUndo" in report.text
     assert "600011" in report.text
     assert "仅为算法技术分析结果，不构成投资建议" in report.text
-    assert "江恩结构与后市情景" in report.text
+    assert "江恩 Price-Time 结构与条件情景" in report.text
     assert "威科夫结构与后市情景" in report.text
     assert "威科夫结构生命周期回放" in report.text
     assert "report-algorithm-button" in report.text

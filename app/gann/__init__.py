@@ -1,104 +1,130 @@
-"""确定性、可回放的江恩结构 V2。"""
+"""可计算、可解释、可回测且无未来函数的江恩 Price-Time 引擎。"""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pandas as pd
 
 from app.gann.anchors import confirmed_gann_anchor, confirmed_gann_anchors
-from app.gann.evaluation import evaluate_gann_history
+from app.gann.backtest import evaluate_gann_history
+from app.gann.calibration import calibrate_gann_parameters
+from app.gann.models import GannConfig, ScaleMode
+from app.gann.multitimeframe import higher_timeframe_context
 from app.gann.projection import project_gann
+from app.gann.snapshots import build_snapshot
 
 
-def analyze_gann(frame: pd.DataFrame) -> dict[str, Any]:
-    """同时评估上、下行晋升主锚，并返回分数更高的主候选。"""
-    anchors = confirmed_gann_anchors(frame)
+def analyze_gann(
+    frame: pd.DataFrame,
+    period: str = "daily",
+    horizontal_levels: dict[str, Any] | None = None,
+    *,
+    config: GannConfig | None = None,
+    scale_mode: ScaleMode | None = None,
+    include_backtest: bool = True,
+) -> dict[str, Any]:
+    """同时保留上、下行锚点候选，并输出当前评分最高的完整 Price-Time 结构。"""
+    selected_config = config or GannConfig()
+    if scale_mode is not None:
+        selected_config = replace(selected_config, scale_mode=scale_mode)
+    anchors = confirmed_gann_anchors(frame, selected_config)
     if not anchors:
         return {
             "status": "insufficient",
-            "version": "2.1",
-            "anchor_mode": "promoted_confirmed_pivot",
+            "version": "3.0",
+            "anchor_mode": "confirmed_atr_zigzag_scored",
             "alternatives": [],
             "historical_validation": {},
-            "note": "分析区间内没有足够的已确认高低点，暂不生成江恩图层。",
+            "note": "分析区间内没有完成右侧确认且达到 ATR/百分比阈值的锚点。",
         }
-    alternatives: list[dict[str, Any]] = []
-    for anchor in anchors:
-        candidate = project_gann(frame, anchor)
-        if candidate.get("status") != "active":
-            continue
-        confirmation = anchor.pivot.confirmation_position
-        candidate["anchor"]["confirmed_at"] = pd.Timestamp(
-            frame["datetime"].iloc[confirmation]
-        ).isoformat()
-        candidate["anchor"]["age_bars"] = len(frame) - 1 - anchor.pivot.position
-        alternatives.append(candidate)
+    higher = higher_timeframe_context(frame, period, selected_config)
+    alternatives = [
+        project_gann(
+            frame,
+            anchor,
+            period,
+            horizontal_levels,
+            higher,
+            selected_config,
+            selected_config.scale_mode,
+        )
+        for anchor in anchors
+    ]
+    alternatives = [item for item in alternatives if item.get("status") == "active"]
     if not alternatives:
         return {
             "status": "insufficient",
-            "version": "2.1",
-            "anchor_mode": "promoted_confirmed_pivot",
+            "version": "3.0",
             "alternatives": [],
             "historical_validation": {},
-            "note": "已确认锚点缺少可靠波动尺度，暂不生成江恩图层。",
+            "note": "锚点缺少可用标准化价格单位。",
         }
     alternatives.sort(
         key=lambda item: (
-            item["anchor"].get("invalidated_at_position") is None,
-            float(item["structural_fit"]),
+            float(item["anchor"]["score"]),
+            int(item["anchor"]["confirmation_position"]),
         ),
         reverse=True,
     )
-    primary = alternatives[0]
-    candidates_comparable = len(alternatives) > 1 and (
-        (primary["anchor"].get("invalidated_at_position") is None)
-        == (alternatives[1]["anchor"].get("invalidated_at_position") is None)
-    )
-    score_gap = (
-        float(primary["structural_fit"]) - float(alternatives[1]["structural_fit"])
+    result = dict(alternatives[0])
+    gap = (
+        float(alternatives[0]["anchor"]["score"]) - float(alternatives[1]["anchor"]["score"])
         if len(alternatives) > 1
-        else 1.0
+        else 100.0
     )
-    result = dict(primary)
+    compact_alternatives = [
+        {
+            "direction": item["direction"],
+            "anchor": item["anchor"],
+            "structural_fit": item["structural_fit"],
+            "current_state": item["current_state"],
+            "current_state_label": item["current_state_label"],
+        }
+        for item in alternatives
+    ]
     result.update(
         {
-            "version": "2.1",
-            "anchor_mode": "promoted_confirmed_pivot",
+            "anchor_mode": "confirmed_atr_zigzag_scored",
             "anchor_selection_policy": (
-                "同方向新 Pivot 达到 1 ATR 摆幅并完成右侧三根确认后晋升为当前主锚；"
-                "旧锚仅保留为长期参考。"
+                "ATR 与百分比混合阈值确认 Pivot；同向新锚确认后晋升，Anchor Score 用于评价权重。"
             ),
-            "alternatives": alternatives,
-            "ambiguous": candidates_comparable and score_gap < 0.08,
-            "score_gap": round(score_gap, 3),
-            "historical_validation": evaluate_gann_history(frame, str(primary["direction"])),
+            "alternatives": compact_alternatives,
+            "ambiguous": len(alternatives) > 1 and gap < 8,
+            "score_gap": round(gap, 1),
+            "low_confidence_anchor": float(result["anchor"]["score"])
+            < selected_config.minimum_anchor_score,
+            "historical_validation": (
+                evaluate_gann_history(frame, selected_config) if include_backtest else {}
+            ),
+            "config": {
+                "pivot_window": selected_config.pivot_window,
+                "pivot_atr_factor": selected_config.pivot_atr_factor,
+                "pivot_percent_threshold": selected_config.pivot_percent_threshold,
+                "atr_multiplier": selected_config.atr_multiplier,
+                "cycle_lookback": selected_config.cycle_lookback,
+                "window_tolerance": selected_config.window_tolerance,
+            },
         }
     )
+    result["prediction_snapshot"] = build_snapshot("", period, result)
     return result
 
 
 def gann_decision_context(result: dict[str, Any], decision_status: str) -> dict[str, Any]:
-    """江恩仅评价 Trigger 与当前运动速度是否一致，不独立发单。"""
+    """江恩只提供支持、冲突或中性背景，永远不创建订单。"""
     if result.get("status") != "active":
         return {
             "bias": "unavailable",
             "alignment": "neutral",
-            "note": result.get("note", "江恩结构当前不可用，不参与交易结论。"),
+            "note": result.get("note", "江恩结构不可用。"),
         }
-    direction = str(result.get("direction"))
-    state = str(result.get("current_state"))
-    if result.get("ambiguous"):
+    if result.get("ambiguous") or result.get("low_confidence_anchor"):
         return {
             "bias": "ambiguous",
             "alignment": "neutral",
-            "note": "上、下行江恩候选分差较小，仅保留为速度观察，不参与方向确认。",
-        }
-    if state in {"anchor_invalidated", "slow_angle_broken", "one_by_one_broken"}:
-        return {
-            "bias": direction,
-            "alignment": "fragile",
-            "note": f"{result.get('current_state_label')}，当前江恩候选不提供执行支持。",
+            "note": "江恩双向候选接近或锚点评分偏低，仅作观察。",
         }
     expected = (
         "up"
@@ -107,30 +133,28 @@ def gann_decision_context(result: dict[str, Any], decision_status: str) -> dict[
         if decision_status == "exit_trigger"
         else None
     )
+    direction = str(result["direction"])
     alignment = (
-        "neutral"
-        if expected is None
-        else "supportive"
-        if expected == direction
-        else "conflicting"
+        "neutral" if expected is None else "supportive" if expected == direction else "conflicting"
     )
-    direction_label = "上行" if direction == "up" else "下行"
     suffix = (
-        "，与当前 Trigger 方向一致"
+        "与当前 Trigger 同向。"
         if alignment == "supportive"
-        else "，与当前 Trigger 方向冲突，需降低执行信心"
+        else "与当前 Trigger 冲突。"
         if alignment == "conflicting"
-        else ""
+        else "当前没有严格 Trigger。"
     )
     return {
         "bias": direction,
         "alignment": alignment,
-        "note": f"{direction_label}固定角线：{result.get('current_state_label')}{suffix}。",
+        "note": f"江恩 {result.get('current_state_label', '中性观察')}；{suffix}",
     }
 
 
 __all__ = [
+    "GannConfig",
     "analyze_gann",
+    "calibrate_gann_parameters",
     "confirmed_gann_anchor",
     "confirmed_gann_anchors",
     "gann_decision_context",

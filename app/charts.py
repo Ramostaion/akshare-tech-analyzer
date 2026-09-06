@@ -811,12 +811,12 @@ def _add_gann_overlay(
     frame: pd.DataFrame,
     gann: dict[str, Any],
 ) -> None:
-    """绘制 ATR 归一化江恩扇形、价格分割和时间周期。"""
+    """绘制锚点、标准化角线、价格位、时间窗、共振区和条件情景。"""
     if gann.get("status") != "active" or frame.empty:
         return
     anchor = gann.get("anchor", {})
-    anchor_time = pd.Timestamp(anchor.get("timestamp"))
-    anchor_price = float(anchor.get("price"))
+    anchor_time = pd.Timestamp(anchor["timestamp"])
+    anchor_price = float(anchor["price"])
     direction = str(gann.get("direction", "up"))
     direction_label = "上行" if direction == "up" else "下行"
     common = {
@@ -824,18 +824,19 @@ def _add_gann_overlay(
         "legendgroup": "algorithm-gann",
         "visible": False,
     }
-    fan_items = gann.get("fan_lines", [])
-    future_times = [pd.Timestamp(item["end_time"]) for item in fan_items]
+    fan_items = [
+        item for item in gann.get("fan_lines", []) if item.get("default_visible")
+    ]
     latest_time = pd.Timestamp(frame["datetime"].iloc[-1])
-    projected_end = max(future_times, default=latest_time)
-    future_end = _projection_display_end(frame, projected_end)
+    future_end = max(
+        (pd.Timestamp(item["end_time"]) for item in fan_items), default=latest_time
+    )
     current_close = float(frame["close"].iloc[-1])
     trend_end_prices = [float(item["end_price"]) for item in fan_items]
-    padding_prices = [current_close, *trend_end_prices]
     figure.add_trace(
         go.Scatter(
             x=[latest_time] + [future_end] * len(trend_end_prices),
-            y=padding_prices,
+            y=[current_close, *trend_end_prices],
             mode="lines",
             name="江恩未来显示空间",
             line={"width": 0},
@@ -846,20 +847,19 @@ def _add_gann_overlay(
         row=1,
         col=1,
     )
-
     figure.add_trace(
         go.Scatter(
             x=[anchor_time],
             y=[anchor_price],
             mode="markers+text",
-            name="江恩自动确认锚点",
+            name="江恩确认锚点",
             text=["G"],
             textposition="top center" if direction == "up" else "bottom center",
             marker={"color": GANN_COLOR, "size": 10, "symbol": "diamond"},
             hovertemplate=(
-                f"江恩自动锚点（{direction_label}）<br>日期：%{{x|%Y-%m-%d %H:%M}}"
-                f"<br>价格：%{{y:.3f}}<br>右侧确认：{anchor.get('confirmed_at', '--')}"
-                "<extra></extra>"
+                f"江恩锚点（{direction_label}）<br>Pivot：%{{x|%Y-%m-%d %H:%M}}"
+                f"<br>价格：%{{y:.3f}}<br>确认于：{anchor.get('confirmed_at', '--')}"
+                f"<br>Anchor Score：{anchor.get('score', '--')}/100<extra></extra>"
             ),
             **common,
         ),
@@ -867,27 +867,15 @@ def _add_gann_overlay(
         col=1,
     )
     fan_colors = {"2×1": GANN_FAST_COLOR, "1×1": GANN_COLOR, "1×2": GANN_SLOW_COLOR}
+    scale_method = str(gann.get("scale", {}).get("method", "标准化价格单位 / bar"))
     for item in fan_items:
         label = str(item["label"])
-        item_end = pd.Timestamp(item["end_time"])
-        start_price = float(item["start_price"])
-        item_end_price = float(item["end_price"])
-        source_span = (item_end - anchor_time).total_seconds()
-        display_span = (future_end - anchor_time).total_seconds()
-        display_end_price = (
-            start_price + (item_end_price - start_price) * display_span / source_span
-            if source_span > 0
-            else item_end_price
-        )
         figure.add_trace(
             go.Scatter(
-                x=[
-                    pd.Timestamp(item["start_time"]),
-                    future_end,
-                ],
-                y=[start_price, display_end_price],
+                x=[pd.Timestamp(item["start_time"]), pd.Timestamp(item["end_time"])],
+                y=[float(item["start_price"]), float(item["end_price"])],
                 mode="lines+text",
-                name=f"江恩后续趋势 {label}",
+                name=f"江恩角线 {label}",
                 text=["", label],
                 textposition="middle right",
                 textfont={"color": fan_colors.get(label, GANN_COLOR), "size": 11},
@@ -897,49 +885,46 @@ def _add_gann_overlay(
                     "dash": "solid" if label == "1×1" else "dash",
                 },
                 hovertemplate=(
-                    f"江恩后续趋势 {label}<br>ATR 归一化路径"
-                    "<br>横向延伸是结构观察范围，不是精确到达时间<extra></extra>"
+                    f"江恩角线 {label}<br>{scale_method}"
+                    "<br>动态支撑/阻力，不是精确目标价<extra></extra>"
                 ),
                 **common,
             ),
             row=1,
             col=1,
         )
-
-    zones = gann.get("resonance_zones", [])
+    zones = gann.get("confluence_zones", [])
     if zones:
         figure.add_trace(
             go.Scatter(
                 x=[pd.Timestamp(item["datetime"]) for item in zones],
-                y=[(float(item["lower"]) + float(item["upper"])) / 2 for item in zones],
+                y=[float(item["center"]) for item in zones],
                 mode="markers",
                 name="江恩时价共振区",
                 marker={"color": GANN_COLOR, "size": 11, "symbol": "diamond-open"},
                 text=[
-                    f"{item['angle']} · {item['bars']}根 · {item['price_fraction']}"
+                    f"{item['angle']} · {item['time_window']['label']} · 评分 {item['score']}"
                     for item in zones
                 ],
                 hovertemplate=(
                     "江恩时价共振 %{text}<br>中心：%{y:.3f}"
-                    "<br>仅为条件观察区<extra></extra>"
+                    "<br>价格与时间共同观察区<extra></extra>"
                 ),
                 **common,
             ),
             row=1,
             col=1,
         )
-
-    level_end = future_end
     level_x: list[pd.Timestamp | None] = []
     level_y: list[float | None] = []
     level_text: list[str | None] = []
     levels = sorted(
         gann.get("price_levels", []),
-        key=lambda item: abs(float(item["price"]) - float(frame["close"].iloc[-1])),
+        key=lambda item: abs(float(item["price"]) - current_close),
     )[:5]
     for item in levels:
         price = float(item["price"])
-        level_x.extend([latest_time, level_end, None])
+        level_x.extend([latest_time, future_end, None])
         level_y.extend([price, price, None])
         level_text.extend([str(item["label"]), str(item["label"]), None])
     if level_x:
@@ -949,52 +934,56 @@ def _add_gann_overlay(
                 y=level_y,
                 text=level_text,
                 mode="lines",
-                name="江恩价格分割",
+                name="江恩重要价格位",
                 line={"color": "rgba(192,132,252,0.55)", "width": 1, "dash": "dot"},
-                hovertemplate="江恩价格分割 %{text}<br>价格：%{y:.3f}<extra></extra>",
+                hovertemplate="江恩价格因子 %{text}<br>价格：%{y:.3f}<extra></extra>",
                 **common,
             ),
             row=1,
             col=1,
         )
-
-    visible_low = float(frame["low"].tail(120).min())
-    visible_high = float(frame["high"].tail(120).max())
-    cycle_x: list[pd.Timestamp | None] = []
-    cycle_y: list[float | None] = []
-    cycle_text: list[str | None] = []
-    for item in gann.get("time_cycles", []):
-        timestamp = pd.Timestamp(item["datetime"])
-        cycle_x.extend([timestamp, timestamp, None])
-        cycle_y.extend([visible_low, visible_high, None])
-        label = f"{item['bars']}根"
-        cycle_text.extend([label, label, None])
-    if cycle_x:
+    windows = gann.get("time_windows", [])
+    for index, item in enumerate(windows):
+        figure.add_vrect(
+            x0=pd.Timestamp(item["start_datetime"]),
+            x1=pd.Timestamp(item["end_datetime"]),
+            fillcolor="rgba(129,140,248,0.10)",
+            line={"color": "rgba(129,140,248,0.32)", "width": 1},
+            layer="below",
+            visible=False,
+            name=f"algorithm-gann-time-{index}",
+            row=1,
+            col=1,
+        )
+    if windows:
         figure.add_trace(
             go.Scatter(
-                x=cycle_x,
-                y=cycle_y,
-                text=cycle_text,
-                mode="lines",
+                x=[pd.Timestamp(item["center_datetime"]) for item in windows],
+                y=[current_close] * len(windows),
+                text=[
+                    f"{item['label']} · 基础 {item['base_cycle']} 根 · 评分 {item['score']}"
+                    for item in windows
+                ],
+                mode="markers",
                 name="江恩时间观察窗",
-                line={"color": "rgba(129,140,248,0.25)", "width": 1, "dash": "dot"},
-                hovertemplate="江恩时间周期 %{text}<br>仅为观察窗口<extra></extra>",
+                marker={"color": "rgba(129,140,248,0.7)", "size": 8, "symbol": "line-ns"},
+                hovertemplate=(
+                    "江恩时间窗 %{text}<br>按实际 K 线序号计算，仅供观察<extra></extra>"
+                ),
                 **common,
             ),
             row=1,
             col=1,
         )
-
-    boundary_end = level_end
     for name, price, color, dash in (
-        ("江恩确认位", gann.get("confirmation"), GANN_FAST_COLOR, "dash"),
-        ("江恩失效位", gann.get("invalidation"), WAVE_INVALIDATION_COLOR, "dot"),
+        ("江恩情景触发位", gann.get("confirmation"), GANN_FAST_COLOR, "dash"),
+        ("江恩结构失效位", gann.get("invalidation"), WAVE_INVALIDATION_COLOR, "dot"),
     ):
         if price is None:
             continue
         figure.add_trace(
             go.Scatter(
-                x=[latest_time, boundary_end],
+                x=[latest_time, future_end],
                 y=[float(price), float(price)],
                 mode="lines",
                 name=name,
@@ -1006,12 +995,11 @@ def _add_gann_overlay(
             row=1,
             col=1,
         )
-
     target_zone = gann.get("target_zone", [])
     if len(target_zone) == 2:
         figure.add_trace(
             go.Scatter(
-                x=[latest_time, boundary_end, boundary_end, latest_time, latest_time],
+                x=[latest_time, future_end, future_end, latest_time, latest_time],
                 y=[
                     float(target_zone[0]),
                     float(target_zone[0]),
@@ -1021,16 +1009,44 @@ def _add_gann_overlay(
                 ],
                 mode="lines",
                 fill="toself",
-                name="江恩确认后目标观察区",
+                name="江恩目标共振区",
                 line={"color": "rgba(192,132,252,0.35)", "width": 1},
                 fillcolor="rgba(192,132,252,0.08)",
-                hovertemplate="江恩确认后目标观察区 %{y:.3f}<extra></extra>",
+                hovertemplate="江恩条件目标区 %{y:.3f}<extra></extra>",
                 **common,
             ),
             row=1,
             col=1,
         )
-
+    for index, scenario in enumerate(gann.get("scenarios", []), start=1):
+        targets = scenario.get("target_zones", [])
+        if not targets:
+            continue
+        target = sum(map(float, targets[0])) / 2
+        confidence = float(scenario.get("effective_confidence", 0.5))
+        figure.add_trace(
+            go.Scatter(
+                x=[latest_time, future_end],
+                y=[current_close, target],
+                mode="lines+markers",
+                name=f"江恩情景 {index}：{scenario.get('name', '')}",
+                line={
+                    "color": GANN_COLOR if index == 1 else GANN_SLOW_COLOR,
+                    "width": 2,
+                    "dash": "dash",
+                },
+                opacity=max(0.3, confidence),
+                hovertemplate=(
+                    f"{scenario.get('name', '')}<br>触发：{scenario.get('trigger', '')}"
+                    f"<br>确认：{scenario.get('confirmation', '')}"
+                    f"<br>失效：{scenario.get('invalidation', '')}"
+                    "<br>横向距离仅作情景示意<extra></extra>"
+                ),
+                **common,
+            ),
+            row=1,
+            col=1,
+        )
 
 def _add_wyckoff_overlay(
     figure: go.Figure,

@@ -69,12 +69,12 @@ def main() -> None:
                     .filter((trace) => trace.meta?.algorithm === 'gann')
                     .map((trace) => ({name: trace.name, y: trace.y || []})),
                   gannTrendInRange: Math.max(...traces
-                    .filter((trace) => String(trace.name || '').startsWith('江恩后续趋势'))
+                    .filter((trace) => String(trace.name || '').startsWith('江恩角线'))
                     .flatMap((trace) => [...(trace.x || [])]
                       .map((value) => new Date(value).getTime())))
                     <= new Date(graph?._fullLayout?.xaxis?.range?.[1]).getTime(),
                   gannTrendPixels: Math.min(...traces
-                    .filter((trace) => String(trace.name || '').startsWith('江恩后续趋势'))
+                    .filter((trace) => String(trace.name || '').startsWith('江恩角线'))
                     .map((trace) => Math.abs(
                       graph._fullLayout.xaxis.d2p(trace.x.at(-1))
                       - graph._fullLayout.xaxis.d2p(trace.x[0])
@@ -104,7 +104,7 @@ def main() -> None:
         assert has_scenario or result["waveResolvedNote"]
         if has_scenario:
             assert any(str(item).startswith("浪形情景 2") for item in traces)
-        assert "江恩后续趋势 1×1" in traces
+        assert "江恩角线 1×1" in traces
         assert result["gannVisible"]
         assert result["waveHidden"]
         assert result["waveShapesHidden"]

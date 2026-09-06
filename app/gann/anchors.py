@@ -1,175 +1,133 @@
-"""基于右侧确认 Pivot 的江恩锚点生命周期。"""
+"""江恩锚点评分、竞争方向与因果晋升。"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Literal
+import hashlib
 
 import numpy as np
 import pandas as pd
 
-from app.wave.pivots import WavePivot, confirmed_zigzag_pivots
-
-Direction = Literal["up", "down"]
-
-
-@dataclass(frozen=True, slots=True)
-class GannAnchor:
-    """只使用右侧确认数据发布，并可由更新的同向重要 Pivot 晋升的江恩锚点。"""
-
-    direction: Direction
-    pivot: WavePivot
-    previous_pivot: WavePivot
-    atr: float
-    lifecycle_start: int | None = None
-    invalidated_at: int | None = None
-    quality: float = 0.0
-    reference_pivot: WavePivot | None = None
-    reference_quality: float | None = None
-    promotion_reason: str = "initial_confirmed_pivot"
-
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "direction": self.direction,
-            "kind": self.pivot.kind,
-            "position": self.pivot.position,
-            "confirmation_position": self.pivot.confirmation_position,
-            "timestamp": self.pivot.timestamp.isoformat(),
-            "confirmed_at": None,
-            "price": round(self.pivot.price, 6),
-            "previous_price": round(self.previous_pivot.price, 6),
-            "atr": round(self.atr, 6),
-            "lifecycle_start_position": self.lifecycle_start,
-            "invalidated_at_position": self.invalidated_at,
-            "quality": round(self.quality, 3),
-            "promotion_reason": self.promotion_reason,
-            "reference_anchor": (
-                {
-                    "kind": self.reference_pivot.kind,
-                    "position": self.reference_pivot.position,
-                    "confirmation_position": self.reference_pivot.confirmation_position,
-                    "timestamp": self.reference_pivot.timestamp.isoformat(),
-                    "price": round(self.reference_pivot.price, 6),
-                    "quality": round(float(self.reference_quality or 0.0), 3),
-                }
-                if self.reference_pivot is not None
-                else None
-            ),
-        }
+from app.gann.models import Direction, GannAnchor, GannConfig, GannPivot
+from app.gann.pivots import confirmed_pivots
 
 
-def _anchor_quality(
-    frame: pd.DataFrame,
-    pivot: WavePivot,
-    previous: WavePivot,
-    atr: float,
-) -> float:
-    swing_atr = abs(pivot.price - previous.price) / atr
-    duration = max(1, pivot.position - previous.position)
-    duration_score = min(duration / 16, 1.0)
-    swing_score = min(swing_atr / 4, 1.0)
-    prominence = min(max(pivot.atr_move, swing_atr) / 4, 1.0)
-    volume_score = 0.5
-    if "volume" in frame and pivot.position < len(frame):
-        recent = pd.to_numeric(
-            frame["volume"].iloc[max(0, pivot.position - 20) : pivot.position + 1]
-        )
-        median = float(recent.median()) if not recent.empty else np.nan
-        current = float(recent.iloc[-1]) if not recent.empty else np.nan
-        if np.isfinite(median) and median > 0 and np.isfinite(current):
-            volume_score = min(current / median, 2.0) / 2
-    return float(0.4 * swing_score + 0.25 * duration_score + 0.2 * prominence + 0.15 * volume_score)
+def _bounded(value: float) -> float:
+    return round(float(np.clip(value, 0.0, 1.0)), 4)
 
 
-def _invalidated_position(
-    frame: pd.DataFrame,
-    direction: Direction,
-    pivot: WavePivot,
-    atr: float,
-) -> int | None:
-    """两根连续收盘穿越锚点缓冲区才结束生命周期。"""
-    closes = pd.to_numeric(frame["close"], errors="coerce").to_numpy(dtype=float)
-    threshold = pivot.price - 0.15 * atr if direction == "up" else pivot.price + 0.15 * atr
-    consecutive = 0
-    for position in range(pivot.confirmation_position + 1, len(frame)):
-        crossed = (
-            closes[position] < threshold
-            if direction == "up"
-            else closes[position] > threshold
-        )
-        consecutive = consecutive + 1 if crossed else 0
-        if consecutive >= 2:
-            return position
-    return None
+def anchor_score(
+    frame: pd.DataFrame, pivot: GannPivot, previous: GannPivot
+) -> tuple[float, dict[str, float]]:
+    """按七项固定权重计算可解释 Anchor Score（满分 100）。"""
+    atr = max(pivot.atr_at_confirmation, 1e-12)
+    left = max(0, pivot.position - 20)
+    segment = frame.iloc[left : pivot.confirmation_position + 1]
+    swing_atr = pivot.swing_size / atr
+    pivot_strength = _bounded(max(swing_atr / 5, pivot.duration / 24))
+    swing_magnitude = _bounded(swing_atr / 6)
+    atr_significance = _bounded(swing_atr / 4)
+    prices = pd.concat([segment["high"], segment["low"]]).astype(float)
+    touches = int((prices.sub(pivot.price).abs() <= atr * 0.35).sum())
+    support_resistance = _bounded(touches / 4)
+    volume_confirmation = 0.5
+    if "volume" in segment:
+        volumes = pd.to_numeric(segment["volume"], errors="coerce").replace(0, np.nan)
+        median = float(volumes.median())
+        pivot_volume = float(volumes.iloc[min(pivot.position - left, len(volumes) - 1)])
+        if np.isfinite(median) and median > 0 and np.isfinite(pivot_volume):
+            volume_confirmation = _bounded(pivot_volume / median / 2)
+    closes = pd.to_numeric(frame["close"], errors="coerce")
+    before = float(closes.iloc[max(0, pivot.position - 2)])
+    after = float(closes.iloc[pivot.confirmation_position])
+    reversal = (after - before) * (1 if pivot.kind == "low" else -1) / atr
+    momentum_reversal = _bounded(reversal / 2)
+    time_persistence = _bounded(pivot.duration / 20)
+    components = {
+        "pivot_strength": round(pivot_strength * 25, 2),
+        "swing_magnitude": round(swing_magnitude * 20, 2),
+        "atr_significance": round(atr_significance * 15, 2),
+        "support_resistance": round(support_resistance * 15, 2),
+        "volume_confirmation": round(volume_confirmation * 10, 2),
+        "momentum_reversal": round(momentum_reversal * 10, 2),
+        "time_persistence": round(time_persistence * 5, 2),
+    }
+    return round(sum(components.values()), 1), components
 
 
-def confirmed_gann_anchors(frame: pd.DataFrame) -> list[GannAnchor]:
-    """返回每个方向最新晋升的右确认锚点，并携带长期参考锚。"""
-    pivots = confirmed_zigzag_pivots(frame, swing_window=3, atr_threshold=1.0)
-    candidates: list[GannAnchor] = []
+def _lifecycle_id(direction: Direction, pivot: GannPivot) -> str:
+    raw = f"{direction}|{pivot.timestamp.isoformat()}|{pivot.price:.8f}"
+    return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+def build_anchor_candidates(
+    frame: pd.DataFrame, config: GannConfig = GannConfig()
+) -> list[GannAnchor]:
+    """为已确认反转构造锚点，评分只读取 confirmation_position 以前的数据。"""
+    pivots = confirmed_pivots(frame, config)
+    anchors: list[GannAnchor] = []
     for index in range(1, len(pivots)):
         pivot = pivots[index]
-        previous = pivots[index - 1]
-        confirmation = pivot.confirmation_position
-        if confirmation >= len(frame):
+        previous = next(
+            (item for item in reversed(pivots[:index]) if item.kind != pivot.kind),
+            None,
+        )
+        if previous is None:
             continue
-        atr = float(frame["ATR14"].iloc[confirmation])
-        if not np.isfinite(atr) or atr <= 0:
-            continue
+        history = frame.iloc[: pivot.confirmation_position + 1]
+        score, components = anchor_score(history, pivot, previous)
         direction: Direction = "up" if pivot.kind == "low" else "down"
-        invalidated_at = _invalidated_position(frame, direction, pivot, atr)
-        candidates.append(
+        anchors.append(
             GannAnchor(
                 direction,
                 pivot,
                 previous,
-                atr,
-                lifecycle_start=confirmation,
-                invalidated_at=invalidated_at,
-                quality=_anchor_quality(frame, pivot, previous, atr),
+                score,
+                components,
+                _lifecycle_id(direction, pivot),
             )
         )
+    return anchors
+
+
+def confirmed_gann_anchors(
+    frame: pd.DataFrame, config: GannConfig = GannConfig()
+) -> list[GannAnchor]:
+    """返回上、下行最新 ATR 显著确认锚，旧高分锚仅作长期参考。"""
+    candidates = build_anchor_candidates(frame, config)
     active: list[GannAnchor] = []
     for direction in ("up", "down"):
-        matching = sorted(
-            (item for item in candidates if item.direction == direction),
-            key=lambda item: item.pivot.confirmation_position,
-        )
+        matching = [item for item in candidates if item.direction == direction]
         if not matching:
             continue
-        latest = matching[-1]
-        prior = matching[:-1]
-        valid_references = [
-            item
-            for item in prior
-            if item.invalidated_at is None
-            or item.invalidated_at > latest.pivot.confirmation_position
-        ]
-        reference = max(valid_references, key=lambda item: item.quality, default=None)
-        current = replace(
-            latest,
-            reference_pivot=reference.pivot if reference is not None else None,
-            reference_quality=reference.quality if reference is not None else None,
-            promotion_reason=(
-                "newer_confirmed_pivot"
-                if len(matching) > 1
-                else "initial_confirmed_pivot"
-            ),
+        current = matching[-1]
+        reference = max(matching[:-1], key=lambda item: item.score, default=None)
+        active.append(
+            GannAnchor(
+                current.direction,
+                current.pivot,
+                current.previous_pivot,
+                current.score,
+                current.score_components,
+                current.lifecycle_id,
+                reference.pivot if reference else None,
+            )
         )
-        active.append(current)
     return active
 
 
-def confirmed_gann_anchor(frame: pd.DataFrame) -> GannAnchor | None:
-    """兼容入口：从各方向最新晋升锚点中选择当前主候选。"""
-    candidates = confirmed_gann_anchors(frame)
-    if not candidates:
-        return None
+def confirmed_gann_anchor(
+    frame: pd.DataFrame, config: GannConfig = GannConfig()
+) -> GannAnchor | None:
+    candidates = confirmed_gann_anchors(frame, config)
     return max(
-        candidates,
-        key=lambda item: (
-            item.invalidated_at is None,
-            item.quality,
-            item.pivot.confirmation_position,
-        ),
+        candidates, key=lambda item: (item.score, item.pivot.confirmation_position), default=None
     )
+
+
+__all__ = [
+    "GannAnchor",
+    "anchor_score",
+    "build_anchor_candidates",
+    "confirmed_gann_anchor",
+    "confirmed_gann_anchors",
+]
