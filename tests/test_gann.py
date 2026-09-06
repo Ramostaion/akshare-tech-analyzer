@@ -10,13 +10,20 @@ from app.gann import (
     calibrate_gann_parameters,
     gann_decision_context,
 )
-from app.gann.anchors import anchor_score, confirmed_gann_anchor, confirmed_gann_anchors
+from app.gann.anchors import (
+    anchor_lifecycles,
+    anchor_score,
+    confirmed_gann_anchor,
+    confirmed_gann_anchors,
+)
 from app.gann.backtest import evaluate_gann_history
 from app.gann.confluence import build_confluence_zones
 from app.gann.fan import angle_price, build_fan
 from app.gann.multitimeframe import resample_weekly
 from app.gann.pivots import confirmed_pivots
+from app.gann.price_levels import cluster_price_levels
 from app.gann.scale import build_scale
+from app.gann.scenarios import horizon_for_period
 from app.gann.snapshots import build_snapshot
 from app.gann.time_cycles import CYCLE_MULTIPLES, build_time_windows
 from app.indicators import add_indicators
@@ -96,6 +103,31 @@ def test_price_scale_modes_are_positive_and_pixel_independent(market_frame, mode
         assert scale.price_unit == pytest.approx(anchor.atr * 0.25)
 
 
+def test_atr_price_unit_is_frozen_at_anchor_confirmation(market_frame) -> None:
+    frame = _enriched(market_frame)
+    anchor = confirmed_gann_anchor(frame)
+    assert anchor is not None
+    expected = build_scale(anchor).price_unit
+    changed = frame.copy()
+    changed.loc[changed.index[-1], "ATR14"] *= 50
+
+    assert build_scale(anchor).price_unit == expected
+    assert anchor.atr == float(frame["ATR14"].iloc[anchor.pivot.confirmation_position])
+
+
+def test_anchor_lifecycle_records_confirmed_active_and_terminal_states(market_frame) -> None:
+    rows = anchor_lifecycles(_enriched(market_frame))
+
+    assert rows
+    assert all(row["confirmed_at"] for row in rows)
+    assert all(
+        [event["status"] for event in row["lifecycle_events"]][:3]
+        == ["candidate", "confirmed", "active"]
+        for row in rows
+    )
+    assert {row["status"] for row in rows} <= {"active", "invalidated", "replaced"}
+
+
 def test_fan_math_uses_fixed_anchor_and_bar_index(market_frame) -> None:
     frame = _enriched(market_frame)
     anchor = confirmed_gann_anchor(frame)
@@ -138,6 +170,30 @@ def test_time_windows_derive_from_swing_durations_and_bar_positions(market_frame
         item["start_position"] <= item["center_position"] <= item["end_position"]
         for item in windows
     )
+    assert all(
+        {"cycle_ratio", "center_bar", "start_bar", "end_bar", "score", "source_cycle"}
+        <= set(item)
+        for item in windows
+    )
+    assert all(item["visibility"] in {"normal", "faded", "hidden"} for item in windows)
+
+
+def test_price_levels_cluster_and_only_top_three_are_visible(market_frame) -> None:
+    frame = _enriched(market_frame)
+    anchor = confirmed_gann_anchor(frame)
+    assert anchor is not None
+    base = anchor.pivot.price
+    levels = [
+        {"price": base, "label": "A", "source": "gann_eighth", "weight": 10},
+        {"price": base + anchor.atr * 0.1, "label": "B", "source": "fibonacci", "weight": 15},
+        {"price": base + anchor.atr, "label": "C", "source": "horizontal_sr", "weight": 15},
+    ]
+
+    zones = cluster_price_levels(levels, anchor)
+
+    assert len(zones) == 2
+    assert zones[0]["price_low"] < zones[0]["price_high"]
+    assert sum(bool(item["default_visible"]) for item in zones) <= 3
 
 
 def test_confluence_score_increases_with_more_price_factors(market_frame) -> None:
@@ -173,6 +229,15 @@ def test_confluence_score_increases_with_more_price_factors(market_frame) -> Non
 
     assert basic and rich
     assert rich[0]["score"] > basic[0]["score"]
+    assert {
+        "price_low",
+        "price_high",
+        "time_start_bar",
+        "time_end_bar",
+        "support_or_resistance",
+        "dominant_factors",
+        "confidence",
+    } <= set(rich[0])
 
 
 def test_scenarios_contain_trigger_target_window_invalidation_and_decay(market_frame) -> None:
@@ -186,6 +251,12 @@ def test_scenarios_contain_trigger_target_window_invalidation_and_decay(market_f
         assert item["trigger"] and item["confirmation"] and item["target_zones"]
         assert item["time_windows"] and item["invalidation"]
         assert item["effective_confidence"] < item["confidence"]
+        assert "共振" in item["trigger"] or "共振" in " ".join(item["rationale"])
+
+
+def test_period_horizons_cap_visible_fans() -> None:
+    assert horizon_for_period("daily") == (15, 20)
+    assert horizon_for_period("weekly") == (6, 8)
 
 
 def test_prefix_result_does_not_change_when_later_rows_change(market_frame) -> None:
@@ -217,6 +288,10 @@ def test_backtest_reports_random_baseline_and_ordered_oos(market_frame) -> None:
     assert result["no_lookahead"] is True
     assert "random_baseline_reversal_rate" in result["time_windows"]
     assert result["time_windows"]["baseline_policy"]
+    assert {"local_high_rate", "local_low_rate", "random_baseline_breakout_rate"} <= set(
+        result["time_windows"]
+    )
+    assert {"60~70", "70~80", "80~90", "90+"} <= set(result["confluence"])
     assert "walk_forward" in result
 
 
@@ -237,6 +312,11 @@ def test_snapshot_is_insert_only(tmp_path, market_frame) -> None:
     changed["scenarios"] = []
     assert cache.save_gann_snapshot(changed) is False
     assert cache.get_gann_snapshot(snapshot["snapshot_id"])["scenarios"]
+    recalculated = dict(result)
+    recalculated["fan_lines"] = [*result["fan_lines"], {"label": "recalculated"}]
+    new_snapshot = build_snapshot("600011", "daily", recalculated)
+    assert new_snapshot["snapshot_id"] != snapshot["snapshot_id"]
+    assert new_snapshot["calculation_fingerprint"]
     cache.close()
 
 

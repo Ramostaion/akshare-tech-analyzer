@@ -10,7 +10,7 @@ from app.gann.confluence import build_confluence_zones
 from app.gann.fan import build_fan, classify_state
 from app.gann.models import GannAnchor, GannConfig, ScaleMode
 from app.gann.pivots import confirmed_pivots
-from app.gann.price_levels import build_price_levels
+from app.gann.price_levels import build_price_levels, cluster_price_levels
 from app.gann.scale import build_scale
 from app.gann.scenarios import build_scenarios, horizon_for_period
 from app.gann.time_cycles import build_time_windows, future_bar_datetime
@@ -36,8 +36,28 @@ def project_gann(
         item["end_time"] = future_bar_datetime(latest_time, main_horizon, period).isoformat()
     pivots = confirmed_pivots(frame, config)
     levels = build_price_levels(frame, anchor, horizontal_levels)
-    cycles, windows = build_time_windows(frame, anchor, pivots, hard_cap, period, config)
-    zones = build_confluence_zones(frame, anchor, scale, levels, windows, higher_timeframe, config)
+    price_zones = cluster_price_levels(levels, anchor, config)
+    htf_aligned = bool(higher_timeframe and higher_timeframe.get("direction") == anchor.direction)
+    cycles, windows = build_time_windows(
+        frame,
+        anchor,
+        pivots,
+        hard_cap,
+        period,
+        config,
+        higher_timeframe_alignment=htf_aligned,
+        nearby_price_confluence=min(1.0, len(price_zones) / 6),
+    )
+    zones = build_confluence_zones(
+        frame,
+        anchor,
+        scale,
+        levels,
+        windows,
+        higher_timeframe,
+        config,
+        price_zones,
+    )
     state, state_label, relation = classify_state(frame, anchor, scale)
     scenarios = build_scenarios(anchor, scale, fan, levels, windows, zones, state, period, config)
     primary = scenarios[0]
@@ -63,9 +83,13 @@ def project_gann(
         "scale": scale.as_dict(),
         "fan_lines": fan,
         "price_levels": levels,
+        "price_zones": price_zones,
         "time_cycles": cycles,
         "time_windows": windows,
         "confluence_zones": zones,
+        "visible_price_zones": [item for item in price_zones if item["default_visible"]],
+        "visible_time_windows": [item for item in windows if item["default_visible"]],
+        "visible_confluence_zones": [item for item in zones if item["default_visible"]],
         "resonance_zones": zones,
         "scenarios": scenarios,
         "confirmation": primary["trigger_price"],
@@ -84,6 +108,20 @@ def project_gann(
         "structural_fit": round(structural_fit / 100, 3),
         "higher_timeframe": higher_timeframe or {},
         "snapshot_time": latest_time.isoformat(),
+        "status_card": {
+            "anchor": round(anchor.pivot.price, 6),
+            "anchor_score": round(anchor.score, 1),
+            "atr_at_anchor": round(anchor.atr, 6),
+            "price_unit": round(scale.price_unit, 8),
+            "structure": state_label,
+            "main_scenario": primary["name"],
+            "trigger": primary["trigger"],
+            "confirmation": primary["confirmation"],
+            "target": primary["target_zones"][0],
+            "time_window": primary["time_windows"][0] if primary["time_windows"] else None,
+            "invalidation": primary["invalidation"],
+            "top_confluence": zones[0] if zones else None,
+        },
         "note": "角线是标准化动态支撑/阻力；情景置信度是未校准相对权重，不是上涨概率。",
     }
 

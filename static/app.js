@@ -27,6 +27,14 @@ const algorithmVisibility = {
   gann: false,
   wyckoff: false,
 };
+const gannLayerVisibility = {
+  anchor: true,
+  fan: true,
+  price: true,
+  time: true,
+  confluence: true,
+  scenarios: true,
+};
 
 const favoritesStorageKey = "akshare-tech-analyzer:favorites:v1";
 const assetLabels = { stock: "A股", etf: "场内ETF", cn_stock: "A股", cn_etf: "场内ETF", us_stock: "美股", us_index: "美国指数", global_future: "外盘期货" };
@@ -356,51 +364,136 @@ function renderGann(gann) {
   }
   const anchor = gann.anchor || {};
   const scale = gann.scale || {};
-  const history = gann.historical_validation || {};
-  const angleStudy = history.angle_events || {};
-  const timeStudy = history.time_windows || {};
-  const walkForward = history.walk_forward || {};
+  const card = gann.status_card || {};
   const direction = gann.direction === "down" ? "下行" : "上行";
-  const anchorDate = anchor.timestamp ? new Date(anchor.timestamp).toLocaleDateString("zh-CN") : "--";
-  const confirmedDate = anchor.confirmed_at ? new Date(anchor.confirmed_at).toLocaleDateString("zh-CN") : "--";
-  const relation = Object.entries(gann.angle_relation || {})
-    .map(([angle, side]) => `${angle} ${side}`).join(" · ");
-  const windows = (gann.time_windows || []).slice(0, 4)
-    .map((item) => `${item.label}：未来 ${item.bars_from_now} 根附近（评分 ${number(item.score, 1)}）`)
-    .join(" · ");
-  const zones = (gann.confluence_zones || []).slice(0, 3)
-    .map((item) => `${number(item.lower, 3)}–${number(item.upper, 3)} / ${item.time_window.label} / ${number(item.score, 1)}分`)
-    .join(" · ");
-  const alternatives = (gann.alternatives || [])
-    .map((item) => `${item.direction === "down" ? "下行" : "上行"}锚 ${number(item.anchor?.score, 1)}/100`)
-    .join(" · ");
+  const date = (value) => value ? new Date(value).toLocaleDateString("zh-CN") : "--";
+  const zoneText = (zone) => Array.isArray(zone)
+    ? zone.map((value) => number(value, 3)).join(" ~ ") : "--";
+  const status = document.createElement("article");
+  status.className = "gann-status-card";
+  const heading = document.createElement("div");
+  heading.className = "gann-status-head";
+  const headingTitle = document.createElement("strong");
+  headingTitle.textContent = "GANN STATUS";
+  const headingState = document.createElement("span");
+  headingState.textContent = `江恩 Price-Time V${gann.version || "3.0"} · ${direction}`;
+  heading.append(headingTitle, headingState);
+  const facts = document.createElement("dl");
+  facts.className = "gann-status-facts";
+  const topZone = card.top_confluence;
+  const timeWindow = card.time_window;
   const rows = [
-    `江恩 Price-Time V${gann.version || "3.0"} · ${direction}主锚 ${anchorDate} ${number(anchor.price, 3)} · ${confirmedDate} 后可用`,
-    `Anchor Score：${number(anchor.score, 1)}/100${gann.low_confidence_anchor ? "（低权重）" : ""} · ${alternatives}`,
-    `价格单位：${scale.method || "ATR(14) × 0.25 / bar"} · 时间单位：1 根实际 K 线`,
-    `市场状态：${gann.current_state_label || "中性"} · ${relation || "角线关系不可用"}`,
-    `主预测长度：${gann.forecast_horizon?.main_bars || "--"} 根 · 硬上限 ${gann.forecast_horizon?.hard_cap_bars || "--"} 根`,
-    `时间观察窗：${windows || "当前预测范围内没有高评分窗口"}`,
-    `时价共振区：${zones || "当前没有角线、价格因素与时间窗的三重重合"}`,
-    `角线事件回放：${angleStudy.sample_count || 0} 次；5 根方向准确率 ${angleStudy.horizon_5?.direction_accuracy ?? "样本不足"}${angleStudy.horizon_5?.direction_accuracy != null ? "%" : ""}`,
-    `时间窗反转率：${timeStudy.reversal_rate ?? "样本不足"}${timeStudy.reversal_rate != null ? "%" : ""}；随机基线 ${timeStudy.random_baseline_reversal_rate ?? "样本不足"}${timeStudy.random_baseline_reversal_rate != null ? "%" : ""}`,
-    walkForward.available
-      ? `样本外：${walkForward.out_of_sample?.sample_count || 0} 次；方向准确率 ${walkForward.out_of_sample?.direction_accuracy ?? "样本不足"}${walkForward.out_of_sample?.direction_accuracy != null ? "%" : ""}`
-      : walkForward.note,
-    gann.note,
+    ["Anchor", `${number(card.anchor ?? anchor.price, 3)} · ${date(anchor.pivot_time || anchor.timestamp)}`],
+    ["Confirmed At", date(anchor.confirmed_at)],
+    ["Anchor Score", `${number(card.anchor_score ?? anchor.score, 1)} / 100`],
+    ["ATR at Anchor", number(card.atr_at_anchor ?? anchor.anchor_atr ?? anchor.atr, 3)],
+    ["Price Unit", `${number(card.price_unit ?? scale.price_unit, 4)} / bar`],
+    ["Structure", card.structure || gann.current_state_label || "--"],
+    ["Main Scenario", card.main_scenario || "--"],
+    ["Trigger", card.trigger || "--"],
+    ["Confirmation", card.confirmation || "--"],
+    ["Target", zoneText(card.target)],
+    ["Time Window", timeWindow
+      ? `${timeWindow.label} · +${timeWindow.bars_from_now} bars · ${number(timeWindow.score, 1)}分`
+      : "--"],
+    ["Invalidation", card.invalidation || "--"],
+    ["Top Confluence", topZone
+      ? `${number(topZone.price_low, 3)}~${number(topZone.price_high, 3)} · ${number(topZone.score, 1)}分`
+      : "暂无 65 分以上共振区"],
   ];
-  (gann.scenarios || []).forEach((scenario, index) => {
-    const targets = (scenario.target_zones || [])
-      .map((zone) => zone.map((value) => number(value, 3)).join("–")).join("、");
-    const scenarioWindows = (scenario.time_windows || []).slice(0, 2)
-      .map((item) => `${item.label} +${item.bars_from_now}根`).join("、");
-    rows.push(
-      `情景 ${index + 1} · ${scenario.name} · 相对置信度 ${number(scenario.confidence * 100, 1)}%（未校准）`,
-      `触发：${scenario.trigger}；确认：${scenario.confirmation}`,
-      `目标区：${targets || "--"}；时间窗：${scenarioWindows || "--"}；失效：${scenario.invalidation}`,
-    );
+  rows.forEach(([label, value]) => {
+    const wrapper = document.createElement("div");
+    const term = document.createElement("dt");
+    const description = document.createElement("dd");
+    term.textContent = label;
+    description.textContent = value;
+    wrapper.append(term, description);
+    facts.append(wrapper);
   });
-  renderRows("#gann-analysis", rows.filter(Boolean));
+  status.append(heading, facts);
+  target.append(status);
+
+  const scenarios = document.createElement("div");
+  scenarios.className = "gann-scenarios";
+  (gann.scenarios || []).forEach((scenario, index) => {
+    const item = document.createElement("article");
+    item.className = `gann-scenario ${index === 0 ? "main" : "secondary"}`;
+    const title = document.createElement("div");
+    title.className = "gann-scenario-title";
+    title.textContent = `${index === 0 ? "主情景" : "备选情景"} · ${scenario.name}`;
+    const confidence = document.createElement("span");
+    confidence.textContent = `有效权重 ${number((scenario.effective_confidence || 0) * 100, 1)}%`;
+    title.append(confidence);
+    const detail = document.createElement("div");
+    const targets = (scenario.target_zones || []).map(zoneText).join("、");
+    detail.textContent = (
+      `触发：${scenario.trigger}；确认：${scenario.confirmation}；`
+      + `目标：${targets || "--"}；失效：${scenario.invalidation}`
+    );
+    item.append(title, detail);
+    scenarios.append(item);
+  });
+  target.append(scenarios);
+
+  const details = document.createElement("details");
+  details.className = "gann-structure-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "江恩结构";
+  const detailRows = document.createElement("div");
+  detailRows.className = "gann-structure-grid";
+  const priceZones = (gann.price_zones || []).slice(0, 3)
+    .map((item) => `${number(item.price_low, 3)}~${number(item.price_high, 3)}（${number(item.strength, 1)}分）`)
+    .join("；");
+  const windows = (gann.time_windows || []).filter((item) => item.default_visible).slice(0, 3)
+    .map((item) => `${item.label} +${item.bars_from_now} bars（${number(item.score, 1)}分）`)
+    .join("；");
+  const confluence = (gann.confluence_zones || []).slice(0, 3)
+    .map((item) => `${number(item.price_low, 3)}~${number(item.price_high, 3)} / ${number(item.score, 1)}分`)
+    .join("；");
+  [
+    ["anchor", "Anchor", `状态 ${anchor.status || "active"}；生命周期 ${anchor.lifecycle_id || "--"}`],
+    ["fan", "Fan", scale.method || "固定锚点价格单位"],
+    ["price", "Price Levels", priceZones || "暂无高强度价格区"],
+    ["time", "Time Windows", windows || "暂无 55 分以上时间窗"],
+    ["confluence", "Confluence", confluence || "暂无高分时价共振"],
+    ["scenarios", "Scenarios", `${(gann.scenarios || []).length} 个互斥条件情景`],
+  ].forEach(([layer, label, value]) => {
+    const row = document.createElement("div");
+    const toggle = document.createElement("label");
+    toggle.className = "gann-layer-toggle";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = gannLayerVisibility[layer];
+    checkbox.addEventListener("change", () => {
+      gannLayerVisibility[layer] = checkbox.checked;
+      setGannSubLayer(document.querySelector("#chart .plotly-graph-div"), layer, checkbox.checked);
+    });
+    const strong = document.createElement("strong");
+    const span = document.createElement("span");
+    strong.textContent = label;
+    span.textContent = value;
+    toggle.append(checkbox, strong);
+    row.append(toggle, span);
+    detailRows.append(row);
+  });
+  details.append(summary, detailRows);
+  target.append(details);
+
+  const history = gann.historical_validation || {};
+  const validation = document.createElement("details");
+  validation.className = "gann-structure-details";
+  const validationSummary = document.createElement("summary");
+  validationSummary.textContent = "历史验证 · 随机基线对照";
+  const validationText = document.createElement("div");
+  validationText.className = "gann-validation-note";
+  validationText.textContent = (
+    `角线事件 ${history.angle_events?.sample_count || 0}；`
+    + `时间窗反转率 ${history.time_windows?.reversal_rate ?? "样本不足"}；`
+    + `随机基线 ${history.time_windows?.random_baseline_reversal_rate ?? "样本不足"}；`
+    + `共振样本 ${history.confluence?.sample_count || 0}。评分是未校准结构分，不是概率。`
+  );
+  validation.append(validationSummary, validationText);
+  target.append(validation);
 }
 
 function renderWyckoff(wyckoff) {
@@ -629,6 +722,39 @@ function updateAlgorithmButtons() {
   });
 }
 
+function setGannSubLayer(graph, layer, enabled) {
+  if (!graph || !window.Plotly) return Promise.resolve();
+  const terms = {
+    anchor: ["确认锚点"],
+    fan: ["角线", "未来显示空间"],
+    price: ["重要价格位"],
+    time: ["时间观察窗"],
+    confluence: ["时价共振区"],
+    scenarios: ["情景", "触发位", "失效位", "目标共振区"],
+  }[layer] || [];
+  const traceIndices = [...(graph.data || [])]
+    .map((trace, index) => (
+      trace.meta?.algorithm === "gann"
+      && terms.some((term) => String(trace.name || "").includes(term))
+        ? index : -1
+    ))
+    .filter((index) => index >= 0);
+  const layoutUpdate = {};
+  [...(graph.layout?.shapes || [])].forEach((shape, index) => {
+    const name = String(shape.name || "");
+    const matches = (
+      (layer === "time" && name.startsWith("algorithm-gann-time-"))
+      || (layer === "confluence" && name.startsWith("algorithm-gann-confluence-"))
+    );
+    if (matches) layoutUpdate[`shapes[${index}].visible`] = enabled && algorithmVisibility.gann;
+  });
+  const operations = [];
+  const visible = enabled && algorithmVisibility.gann;
+  if (traceIndices.length) operations.push(window.Plotly.restyle(graph, { visible }, traceIndices));
+  if (Object.keys(layoutUpdate).length) operations.push(window.Plotly.relayout(graph, layoutUpdate));
+  return Promise.all(operations);
+}
+
 function setAlgorithmLayer(graph, algorithm, enabled) {
   if (!graph || !window.Plotly) return Promise.resolve();
   const traceIndices = [...(graph.data || [])]
@@ -650,7 +776,14 @@ function setAlgorithmLayer(graph, algorithm, enabled) {
   const operations = [];
   if (traceIndices.length) operations.push(window.Plotly.restyle(graph, { visible: enabled }, traceIndices));
   if (Object.keys(layoutUpdate).length) operations.push(window.Plotly.relayout(graph, layoutUpdate));
-  return Promise.all(operations).finally(() => {
+  return Promise.all(operations).then(() => {
+    if (algorithm !== "gann" || !enabled) return null;
+    return Promise.all(
+      Object.entries(gannLayerVisibility)
+        .filter(([, layerEnabled]) => !layerEnabled)
+        .map(([layer]) => setGannSubLayer(graph, layer, false)),
+    );
+  }).finally(() => {
     if (undoState) undoState.applying = false;
   });
 }

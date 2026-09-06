@@ -10,6 +10,7 @@ import pandas as pd
 Direction = Literal["up", "down"]
 PivotKind = Literal["high", "low"]
 ScaleMode = Literal["atr", "percent", "log"]
+AnchorStatus = Literal["candidate", "confirmed", "active", "invalidated", "replaced"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,10 @@ class GannConfig:
     window_tolerance: float = 0.10
     scenario_confirmation_bars: int = 2
     confluence_tolerance_atr: float = 0.35
+    price_cluster_tolerance_atr: float = 0.20
+    visible_price_zones: int = 3
+    visible_confluence_zones: int = 3
+    visible_time_window_score: float = 55.0
     minimum_anchor_score: float = 35.0
 
 
@@ -67,6 +72,9 @@ class GannAnchor:
     score_components: dict[str, float]
     lifecycle_id: str
     reference_pivot: GannPivot | None = None
+    status: AnchorStatus = "active"
+    invalidated_at: pd.Timestamp | None = None
+    replacement_anchor_id: str | None = None
 
     @property
     def atr(self) -> float:
@@ -87,6 +95,15 @@ class GannAnchor:
                 "quality": round(self.quality, 3),
                 "score_components": self.score_components,
                 "lifecycle_id": self.lifecycle_id,
+                "status": self.status,
+                "pivot_time": self.pivot.timestamp.isoformat(),
+                "anchor_price": round(self.pivot.price, 6),
+                "anchor_atr": round(self.atr, 6),
+                "anchor_score": round(self.score, 1),
+                "invalidated_at": (
+                    self.invalidated_at.isoformat() if self.invalidated_at is not None else None
+                ),
+                "replacement_anchor_id": self.replacement_anchor_id,
                 "promotion_reason": "newer_confirmed_atr_significant_pivot",
                 "reference_anchor": self.reference_pivot.as_dict()
                 if self.reference_pivot
@@ -144,6 +161,7 @@ class GannScenario:
 
 __all__ = [
     "Direction",
+    "AnchorStatus",
     "GannAnchor",
     "GannConfig",
     "GannPivot",

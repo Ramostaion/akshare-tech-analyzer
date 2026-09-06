@@ -110,9 +110,63 @@ def confirmed_gann_anchors(
                 current.score_components,
                 current.lifecycle_id,
                 reference.pivot if reference else None,
+                "active",
             )
         )
     return active
+
+
+def anchor_lifecycles(
+    frame: pd.DataFrame, config: GannConfig = GannConfig()
+) -> list[dict[str, object]]:
+    """按确认顺序生成不可回写的锚点生命周期。"""
+    candidates = build_anchor_candidates(frame, config)
+    result: list[dict[str, object]] = []
+    for index, anchor in enumerate(candidates):
+        successor = next(
+            (item for item in candidates[index + 1 :] if item.direction == anchor.direction),
+            None,
+        )
+        row = anchor.as_dict()
+        lifecycle_end = (
+            successor.pivot.confirmation_position if successor is not None else len(frame)
+        )
+        closes = pd.to_numeric(
+            frame["close"].iloc[anchor.pivot.confirmation_position + 1 : lifecycle_end],
+            errors="coerce",
+        )
+        invalidated = (
+            closes[closes < anchor.pivot.price - anchor.atr * 0.15]
+            if anchor.direction == "up"
+            else closes[closes > anchor.pivot.price + anchor.atr * 0.15]
+        )
+        invalidated_at = (
+            pd.Timestamp(frame.loc[invalidated.index[0], "datetime"])
+            if not invalidated.empty
+            else None
+        )
+        row["lifecycle_events"] = [
+            {"status": "candidate", "at": anchor.pivot.timestamp.isoformat()},
+            {"status": "confirmed", "at": anchor.pivot.confirmed_at.isoformat()},
+            {"status": "active", "at": anchor.pivot.confirmed_at.isoformat()},
+        ]
+        if invalidated_at is not None:
+            row["status"] = "invalidated"
+            row["invalidated_at"] = invalidated_at.isoformat()
+            row["lifecycle_events"].append(
+                {"status": "invalidated", "at": invalidated_at.isoformat()}
+            )
+        elif successor is not None:
+            row["status"] = "replaced"
+            row["invalidated_at"] = successor.pivot.confirmed_at.isoformat()
+            row["replacement_anchor_id"] = successor.lifecycle_id
+            row["lifecycle_events"].append(
+                {"status": "replaced", "at": successor.pivot.confirmed_at.isoformat()}
+            )
+        else:
+            row["status"] = "active"
+        result.append(row)
+    return result
 
 
 def confirmed_gann_anchor(
@@ -127,6 +181,7 @@ def confirmed_gann_anchor(
 __all__ = [
     "GannAnchor",
     "anchor_score",
+    "anchor_lifecycles",
     "build_anchor_candidates",
     "confirmed_gann_anchor",
     "confirmed_gann_anchors",

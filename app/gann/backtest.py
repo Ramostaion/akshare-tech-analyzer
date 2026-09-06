@@ -189,6 +189,30 @@ def _time_window_study(frame: pd.DataFrame, config: GannConfig) -> dict[str, Any
     baseline_hits = sum(_is_reversal(frame, position) for position in baseline_positions)
     volatility_hits = sum(_has_volatility_expansion(frame, position) for position in positions)
     breakout_hits = sum(_has_breakout(frame, position) for position in positions)
+    local_high_hits = sum(
+        float(frame["high"].iloc[position])
+        >= float(frame["high"].iloc[position - 2 : position + 3].max())
+        for position in positions
+    )
+    local_low_hits = sum(
+        float(frame["low"].iloc[position])
+        <= float(frame["low"].iloc[position - 2 : position + 3].min())
+        for position in positions
+    )
+    baseline_volatility_hits = sum(
+        _has_volatility_expansion(frame, position) for position in baseline_positions
+    )
+    baseline_breakout_hits = sum(_has_breakout(frame, position) for position in baseline_positions)
+    baseline_local_high_hits = sum(
+        float(frame["high"].iloc[position])
+        >= float(frame["high"].iloc[position - 2 : position + 3].max())
+        for position in baseline_positions
+    )
+    baseline_local_low_hits = sum(
+        float(frame["low"].iloc[position])
+        <= float(frame["low"].iloc[position - 2 : position + 3].min())
+        for position in baseline_positions
+    )
     return {
         "sample_count": len(positions),
         "reversal_rate": round(hits / len(positions) * 100, 1) if positions else None,
@@ -205,8 +229,230 @@ def _time_window_study(frame: pd.DataFrame, config: GannConfig) -> dict[str, Any
         if positions
         else None,
         "breakout_rate": round(breakout_hits / len(positions) * 100, 1) if positions else None,
+        "local_high_rate": round(local_high_hits / len(positions) * 100, 1)
+        if positions
+        else None,
+        "local_low_rate": round(local_low_hits / len(positions) * 100, 1)
+        if positions
+        else None,
+        "random_baseline_volatility_expansion_rate": round(
+            baseline_volatility_hits / len(baseline_positions) * 100, 1
+        )
+        if baseline_positions
+        else None,
+        "random_baseline_breakout_rate": round(
+            baseline_breakout_hits / len(baseline_positions) * 100, 1
+        )
+        if baseline_positions
+        else None,
+        "random_baseline_local_high_rate": round(
+            baseline_local_high_hits / len(baseline_positions) * 100, 1
+        )
+        if baseline_positions
+        else None,
+        "random_baseline_local_low_rate": round(
+            baseline_local_low_hits / len(baseline_positions) * 100, 1
+        )
+        if baseline_positions
+        else None,
         "baseline_policy": "使用相同样本数、等距选取且不与江恩窗口重叠的历史 K 线作为基线。",
     }
+
+
+def _confluence_study(frame: pd.DataFrame, config: GannConfig) -> dict[str, Any]:
+    """用确认时可见数据生成共振，并在随后真实 K 线上评估。"""
+    from app.gann.confluence import build_confluence_zones
+    from app.gann.price_levels import build_price_levels, cluster_price_levels
+    from app.gann.time_cycles import build_time_windows
+
+    anchors = build_anchor_candidates(frame, config)
+    events: list[dict[str, Any]] = []
+    for anchor_index, anchor in enumerate(anchors):
+        visible_end = anchor.pivot.confirmation_position + 1
+        if visible_end < 30 or visible_end + 20 >= len(frame):
+            continue
+        prefix = frame.iloc[:visible_end]
+        scale = build_scale(anchor, config)
+        levels = build_price_levels(prefix, anchor)
+        price_zones = cluster_price_levels(levels, anchor, config)
+        pivots = confirmed_pivots(prefix, config)
+        _, windows = build_time_windows(prefix, anchor, pivots, 20, "daily", config)
+        zones = build_confluence_zones(
+            prefix, anchor, scale, levels, windows, None, config, price_zones
+        )
+        lifecycle_end = min(
+            (
+                item.pivot.confirmation_position
+                for item in anchors[anchor_index + 1 :]
+                if item.direction == anchor.direction
+            ),
+            default=len(frame),
+        )
+        for zone in zones:
+            if float(zone["raw_score"]) < 60:
+                continue
+            position = visible_end - 1 + int(zone["time_start_bar"])
+            if (
+                position <= visible_end - 1
+                or position >= lifecycle_end
+                or position + 20 >= len(frame)
+            ):
+                continue
+            direction = anchor.direction
+            outcome = _event_outcome(frame, position, direction, anchor.atr)
+            future = frame.iloc[position + 1 : position + 21]
+            entry = float(frame["close"].iloc[position])
+            sign = 1 if direction == "up" else -1
+            favorable = (
+                float(future["high"].max()) - entry
+                if sign > 0
+                else entry - float(future["low"].min())
+            )
+            adverse = (
+                entry - float(future["low"].min())
+                if sign > 0
+                else float(future["high"].max()) - entry
+            )
+            events.append(
+                {
+                    "score": float(zone["raw_score"]),
+                    "effective_score": float(zone["score"]),
+                    "position": position,
+                    "direction": direction,
+                    "target_hit": favorable >= anchor.atr,
+                    "invalidated": adverse >= anchor.atr,
+                    **outcome,
+                }
+            )
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "60~70": [],
+        "70~80": [],
+        "80~90": [],
+        "90+": [],
+    }
+    for event in events:
+        score = float(event["score"])
+        key = (
+            "90+"
+            if score >= 90
+            else "80~90"
+            if score >= 80
+            else "70~80"
+            if score >= 70
+            else "60~70"
+        )
+        buckets[key].append(event)
+    result: dict[str, Any] = {"sample_count": len(events), "score_field": "raw_score"}
+    for key, rows in buckets.items():
+        item: dict[str, Any] = {
+            "sample_count": len(rows),
+            "target_hit_rate": round(
+                sum(bool(row["target_hit"]) for row in rows) / len(rows) * 100, 1
+            )
+            if rows
+            else None,
+            "invalidation_rate": round(
+                sum(bool(row["invalidated"]) for row in rows) / len(rows) * 100, 1
+            )
+            if rows
+            else None,
+            "median_mfe_atr": round(float(np.median([row["mfe_atr"] for row in rows])), 3)
+            if rows
+            else None,
+            "median_mae_atr": round(float(np.median([row["mae_atr"] for row in rows])), 3)
+            if rows
+            else None,
+        }
+        for horizon in RETURN_HORIZONS:
+            returns = [
+                float(row[f"return_{horizon}"])
+                for row in rows
+                if f"return_{horizon}" in row
+            ]
+            item[f"horizon_{horizon}"] = {
+                "sample_count": len(returns),
+                "direction_accuracy": round(
+                    sum(value > 0 for value in returns) / len(returns) * 100, 1
+                )
+                if returns
+                else None,
+            }
+        result[key] = item
+    comparable = [
+        result[key]["horizon_5"]["direction_accuracy"]
+        for key in buckets
+        if result[key]["horizon_5"]["direction_accuracy"] is not None
+    ]
+    result["monotonic_score_relationship"] = all(
+        left <= right for left, right in zip(comparable, comparable[1:], strict=False)
+    )
+    high_score = [event for event in events if float(event["score"]) >= 80]
+    result["score_gte_80"] = {
+        "sample_count": len(high_score),
+        "direction": {
+            str(horizon): round(
+                sum(bool(event.get(f"correct_{horizon}")) for event in high_score)
+                / len(high_score)
+                * 100,
+                1,
+            )
+            if high_score
+            else None
+            for horizon in RETURN_HORIZONS
+        },
+        "median_mfe_atr": round(
+            float(np.median([event["mfe_atr"] for event in high_score])), 3
+        )
+        if high_score
+        else None,
+        "median_mae_atr": round(
+            float(np.median([event["mae_atr"] for event in high_score])), 3
+        )
+        if high_score
+        else None,
+        "target_hit_rate": round(
+            sum(bool(event["target_hit"]) for event in high_score) / len(high_score) * 100,
+            1,
+        )
+        if high_score
+        else None,
+        "invalidation_rate": round(
+            sum(bool(event["invalidated"]) for event in high_score) / len(high_score) * 100,
+            1,
+        )
+        if high_score
+        else None,
+        "horizons": {
+            str(horizon): {
+                "direction_accuracy": round(
+                    sum(bool(event.get(f"correct_{horizon}")) for event in high_score)
+                    / len(high_score)
+                    * 100,
+                    1,
+                )
+                if high_score
+                else None,
+                "median_return": round(
+                    float(
+                        np.median(
+                            [
+                                float(event[f"return_{horizon}"])
+                                for event in high_score
+                                if f"return_{horizon}" in event
+                            ]
+                        )
+                    )
+                    * 100,
+                    3,
+                )
+                if any(f"return_{horizon}" in event for event in high_score)
+                else None,
+            }
+            for horizon in RETURN_HORIZONS
+        },
+    }
+    result["note"] = "分数是未校准结构评分；仅在分档表现单调且样本充分后才可校准。"
+    return result
 
 
 def _walk_forward_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -287,6 +533,7 @@ def evaluate_gann_history(frame: pd.DataFrame, config: GannConfig = GannConfig()
         },
         "angle_events": _summarize_events(events),
         "time_windows": _time_window_study(frame, config),
+        "confluence": _confluence_study(frame, config),
         "walk_forward": _walk_forward_summary(events),
         "sample_count": len(events),
         "resolved_count": sum("return_5" in item for item in events),

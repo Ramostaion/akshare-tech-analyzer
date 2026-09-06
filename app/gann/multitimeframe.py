@@ -7,7 +7,11 @@ from typing import Any
 import pandas as pd
 
 from app.gann.anchors import confirmed_gann_anchor
+from app.gann.fan import angle_price
 from app.gann.models import GannConfig
+from app.gann.pivots import confirmed_pivots
+from app.gann.scale import build_scale
+from app.gann.time_cycles import infer_base_cycles
 from app.indicators import add_indicators
 
 
@@ -42,10 +46,20 @@ def higher_timeframe_context(
     anchor = confirmed_gann_anchor(weekly, config)
     if anchor is None:
         return None
+    scale = build_scale(anchor, config)
+    latest = len(weekly) - 1
+    fan = {
+        label: round(angle_price(anchor, scale, ratio, latest), 6)
+        for label, ratio in (("2×1", 2.0), ("1×1", 1.0), ("1×2", 0.5))
+    }
+    cycles = infer_base_cycles(confirmed_pivots(weekly, config), config)
     return {
         "timeframe": "weekly",
         "direction": anchor.direction,
         "anchor": anchor.as_dict(),
+        "scale": scale.as_dict(),
+        "fan_at_latest": fan,
+        "time_cycles": cycles,
         "independent": True,
         "note": "周线由日线 OHLC 独立聚合后重新识别 Pivot 与锚点。",
     }

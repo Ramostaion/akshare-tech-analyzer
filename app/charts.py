@@ -24,9 +24,9 @@ WAVE_CONTINUATION_COLOR = "#bef264"
 WAVE_INVALIDATION_COLOR = "#fb7185"
 WAVE_CONFIRMATION_COLOR = "#fbbf24"
 WAVE_NEUTRAL_COLOR = "#94a3b8"
-GANN_COLOR = "#c084fc"
-GANN_FAST_COLOR = "#e879f9"
-GANN_SLOW_COLOR = "#818cf8"
+GANN_COLOR = "#a855f7"
+GANN_FAST_COLOR = "#d946ef"
+GANN_SLOW_COLOR = "#6366f1"
 PROJECTION_DISPLAY_FRACTION = 0.15
 DEFAULT_VISIBLE_BARS = {
     "daily": 220,
@@ -855,11 +855,18 @@ def _add_gann_overlay(
             name="江恩确认锚点",
             text=["G"],
             textposition="top center" if direction == "up" else "bottom center",
-            marker={"color": GANN_COLOR, "size": 10, "symbol": "diamond"},
+            marker={
+                "color": GANN_COLOR,
+                "line": {"color": "#f3e8ff", "width": 1},
+                "size": 11,
+                "symbol": "diamond",
+            },
             hovertemplate=(
-                f"江恩锚点（{direction_label}）<br>Pivot：%{{x|%Y-%m-%d %H:%M}}"
-                f"<br>价格：%{{y:.3f}}<br>确认于：{anchor.get('confirmed_at', '--')}"
-                f"<br>Anchor Score：{anchor.get('score', '--')}/100<extra></extra>"
+                f"Anchor（{direction_label}）<br>Pivot Time：%{{x|%Y-%m-%d %H:%M}}"
+                f"<br>Confirmed At：{anchor.get('confirmed_at', '--')}"
+                f"<br>Anchor Score：{anchor.get('score', '--')}/100"
+                f"<br>ATR at Confirmation：{anchor.get('anchor_atr', anchor.get('atr', '--'))}"
+                "<extra></extra>"
             ),
             **common,
         ),
@@ -867,7 +874,6 @@ def _add_gann_overlay(
         col=1,
     )
     fan_colors = {"2×1": GANN_FAST_COLOR, "1×1": GANN_COLOR, "1×2": GANN_SLOW_COLOR}
-    scale_method = str(gann.get("scale", {}).get("method", "标准化价格单位 / bar"))
     for item in fan_items:
         label = str(item["label"])
         figure.add_trace(
@@ -881,19 +887,41 @@ def _add_gann_overlay(
                 textfont={"color": fan_colors.get(label, GANN_COLOR), "size": 11},
                 line={
                     "color": fan_colors.get(label, GANN_COLOR),
-                    "width": 3 if label == "1×1" else 2,
+                    "width": 3.5 if label == "1×1" else 2.4,
                     "dash": "solid" if label == "1×1" else "dash",
                 },
                 hovertemplate=(
-                    f"江恩角线 {label}<br>{scale_method}"
-                    "<br>动态支撑/阻力，不是精确目标价<extra></extra>"
+                    f"{label}<br>%{{x|%Y-%m-%d}}：%{{y:.3f}}"
+                    "<br>标准化动态支撑/阻力<extra></extra>"
                 ),
                 **common,
             ),
             row=1,
             col=1,
         )
-    zones = gann.get("confluence_zones", [])
+    zones = gann.get("visible_confluence_zones") or [
+        item for item in gann.get("confluence_zones", []) if item.get("default_visible")
+    ]
+    for index, item in enumerate(zones):
+        window = item.get("time_window", {})
+        figure.add_shape(
+            type="rect",
+            x0=pd.Timestamp(window.get("start_datetime", item["datetime"])),
+            x1=pd.Timestamp(window.get("end_datetime", item["datetime"])),
+            y0=float(item["price_low"]),
+            y1=float(item["price_high"]),
+            fillcolor=(
+                "rgba(168,85,247,0.24)"
+                if float(item["score"]) >= 80
+                else "rgba(168,85,247,0.13)"
+            ),
+            line={"color": "rgba(192,132,252,0.78)", "width": 1.4},
+            layer="below",
+            visible=False,
+            name=f"algorithm-gann-confluence-{index}",
+            row=1,
+            col=1,
+        )
     if zones:
         figure.add_trace(
             go.Scatter(
@@ -901,14 +929,18 @@ def _add_gann_overlay(
                 y=[float(item["center"]) for item in zones],
                 mode="markers",
                 name="江恩时价共振区",
-                marker={"color": GANN_COLOR, "size": 11, "symbol": "diamond-open"},
+                marker={
+                    "color": GANN_COLOR,
+                    "line": {"color": "#f3e8ff", "width": 1},
+                    "size": 12,
+                    "symbol": "diamond",
+                },
                 text=[
-                    f"{item['angle']} · {item['time_window']['label']} · 评分 {item['score']}"
+                    f"{item['type']} · {item['score']} 分"
                     for item in zones
                 ],
                 hovertemplate=(
-                    "江恩时价共振 %{text}<br>中心：%{y:.3f}"
-                    "<br>价格与时间共同观察区<extra></extra>"
+                    "Confluence %{text}<br>中心：%{y:.3f}<extra></extra>"
                 ),
                 **common,
             ),
@@ -918,15 +950,25 @@ def _add_gann_overlay(
     level_x: list[pd.Timestamp | None] = []
     level_y: list[float | None] = []
     level_text: list[str | None] = []
-    levels = sorted(
-        gann.get("price_levels", []),
-        key=lambda item: abs(float(item["price"]) - current_close),
-    )[:5]
+    levels = gann.get("visible_price_zones") or [
+        item for item in gann.get("price_zones", []) if item.get("default_visible")
+    ]
+    if not levels:
+        levels = [
+            {
+                "center": float(item["price"]),
+                "price_low": float(item["price"]),
+                "price_high": float(item["price"]),
+                "strength": float(item.get("weight", 0)),
+            }
+            for item in gann.get("price_levels", [])
+        ][:3]
     for item in levels:
-        price = float(item["price"])
+        price = float(item["center"])
         level_x.extend([latest_time, future_end, None])
         level_y.extend([price, price, None])
-        level_text.extend([str(item["label"]), str(item["label"]), None])
+        label = f"价格区 {item['price_low']:.3f}~{item['price_high']:.3f} · {item['strength']}分"
+        level_text.extend([label, label, None])
     if level_x:
         figure.add_trace(
             go.Scatter(
@@ -935,20 +977,38 @@ def _add_gann_overlay(
                 text=level_text,
                 mode="lines",
                 name="江恩重要价格位",
-                line={"color": "rgba(192,132,252,0.55)", "width": 1, "dash": "dot"},
+                showlegend=False,
+                line={"color": "rgba(168,85,247,0.9)", "width": 1.5, "dash": "dot"},
                 hovertemplate="江恩价格因子 %{text}<br>价格：%{y:.3f}<extra></extra>",
                 **common,
             ),
             row=1,
             col=1,
         )
-    windows = gann.get("time_windows", [])
+    windows = gann.get("visible_time_windows") or [
+        item
+        for item in gann.get("time_windows", [])
+        if item.get("default_visible", float(item.get("score", 0)) >= 55)
+    ]
+    def window_range(item: dict[str, Any]) -> str:
+        if "start_bar" in item and "end_bar" in item:
+            return (
+                f"+{int(item['start_bar']) - (len(frame) - 1)}"
+                f"~+{int(item['end_bar']) - (len(frame) - 1)}"
+            )
+        if "bars_from_now" in item:
+            return f"+{item['bars_from_now']}"
+        return "观察区"
     for index, item in enumerate(windows):
         figure.add_vrect(
             x0=pd.Timestamp(item["start_datetime"]),
             x1=pd.Timestamp(item["end_datetime"]),
-            fillcolor="rgba(129,140,248,0.10)",
-            line={"color": "rgba(129,140,248,0.32)", "width": 1},
+            fillcolor=(
+                "rgba(99,102,241,0.18)"
+                if item.get("visibility") == "normal"
+                else "rgba(99,102,241,0.09)"
+            ),
+            line={"color": "rgba(129,140,248,0.68)", "width": 1.2},
             layer="below",
             visible=False,
             name=f"algorithm-gann-time-{index}",
@@ -961,14 +1021,17 @@ def _add_gann_overlay(
                 x=[pd.Timestamp(item["center_datetime"]) for item in windows],
                 y=[current_close] * len(windows),
                 text=[
-                    f"{item['label']} · 基础 {item['base_cycle']} 根 · 评分 {item['score']}"
+                    (
+                        f"{item['label']} · Base Cycle {item['base_cycle']} bars"
+                            f" · Window {window_range(item)} · Score {item['score']}"
+                    )
                     for item in windows
                 ],
                 mode="markers",
                 name="江恩时间观察窗",
-                marker={"color": "rgba(129,140,248,0.7)", "size": 8, "symbol": "line-ns"},
+                marker={"color": "rgba(129,140,248,0.96)", "size": 10, "symbol": "line-ns"},
                 hovertemplate=(
-                    "江恩时间窗 %{text}<br>按实际 K 线序号计算，仅供观察<extra></extra>"
+                    "Gann Time Window<br>%{text}<extra></extra>"
                 ),
                 **common,
             ),
@@ -1010,8 +1073,8 @@ def _add_gann_overlay(
                 mode="lines",
                 fill="toself",
                 name="江恩目标共振区",
-                line={"color": "rgba(192,132,252,0.35)", "width": 1},
-                fillcolor="rgba(192,132,252,0.08)",
+                line={"color": "rgba(168,85,247,0.78)", "width": 1.3},
+                fillcolor="rgba(168,85,247,0.16)",
                 hovertemplate="江恩条件目标区 %{y:.3f}<extra></extra>",
                 **common,
             ),
@@ -1023,24 +1086,71 @@ def _add_gann_overlay(
         if not targets:
             continue
         target = sum(map(float, targets[0])) / 2
+        trigger = float(scenario.get("trigger_price", current_close))
+        anchor_atr = float(
+            anchor.get(
+                "anchor_atr",
+                anchor.get("atr", max(abs(target - current_close) / 4, current_close * 0.005)),
+            )
+        )
+        favorable_sign = 1.0 if direction == "up" else -1.0
+        stage_times = [
+            latest_time,
+            _time_fraction(latest_time, future_end, 0.24),
+            _time_fraction(latest_time, future_end, 0.46),
+            _time_fraction(latest_time, future_end, 0.68),
+            future_end,
+        ]
+        scenario_direction = str(scenario.get("direction", direction))
+        trigger_confirmed = (
+            current_close >= trigger
+            if scenario_direction == "up"
+            else current_close <= trigger
+        )
+        if index == 1 and trigger_confirmed:
+            move = target - current_close
+            stage_prices = [
+                current_close,
+                current_close + move * 0.20,
+                current_close + move * 0.12,
+                current_close + move * 0.58,
+                target,
+            ]
+        elif index == 1:
+            stage_prices = [
+                current_close,
+                trigger + favorable_sign * anchor_atr * 0.08,
+                trigger - favorable_sign * anchor_atr * 0.06,
+                trigger + favorable_sign * anchor_atr * 0.18,
+                target,
+            ]
+        else:
+            stage_prices = [
+                current_close,
+                trigger,
+                trigger - favorable_sign * anchor_atr * 0.12,
+                (trigger + target) / 2,
+                target,
+            ]
         confidence = float(scenario.get("effective_confidence", 0.5))
         figure.add_trace(
             go.Scatter(
-                x=[latest_time, future_end],
-                y=[current_close, target],
+                x=stage_times,
+                y=stage_prices,
                 mode="lines+markers",
+                connectgaps=True,
                 name=f"江恩情景 {index}：{scenario.get('name', '')}",
                 line={
-                    "color": GANN_COLOR if index == 1 else GANN_SLOW_COLOR,
-                    "width": 2,
-                    "dash": "dash",
+                    "color": "#22c55e" if index == 1 else "#facc15",
+                    "width": 2.6 if index == 1 else 1.25,
+                    "dash": "solid",
                 },
-                opacity=max(0.3, confidence),
+                opacity=max(0.36, min(0.95, confidence if index == 1 else confidence * 0.72)),
+                showlegend=False,
                 hovertemplate=(
-                    f"{scenario.get('name', '')}<br>触发：{scenario.get('trigger', '')}"
-                    f"<br>确认：{scenario.get('confirmation', '')}"
-                    f"<br>失效：{scenario.get('invalidation', '')}"
-                    "<br>横向距离仅作情景示意<extra></extra>"
+                    f"{scenario.get('name', '')}"
+                    f"<br>有效权重：{scenario.get('effective_confidence', 0) * 100:.1f}%"
+                    "<br>条件详见 Gann Status<extra></extra>"
                 ),
                 **common,
             ),

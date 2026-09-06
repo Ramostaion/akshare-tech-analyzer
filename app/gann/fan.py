@@ -46,6 +46,8 @@ def build_fan(
             "end_position": latest + horizon,
             "end_price": round(angle_price(anchor, scale, ratio, latest + horizon), 6),
             "default_visible": label in DEFAULT_ANGLES,
+            "display_bars": horizon,
+            "horizon_decay": 0.65 if horizon > 10 else 0.85 if horizon > 5 else 1.0,
             "role": "动态支撑/阻力",
         }
         for label, ratio in ANGLE_FAMILY

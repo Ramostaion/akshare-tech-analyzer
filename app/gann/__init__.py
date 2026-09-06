@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.gann.anchors import confirmed_gann_anchor, confirmed_gann_anchors
+from app.gann.anchors import anchor_lifecycles, confirmed_gann_anchor, confirmed_gann_anchors
 from app.gann.backtest import evaluate_gann_history
 from app.gann.calibration import calibrate_gann_parameters
 from app.gann.models import GannConfig, ScaleMode
@@ -98,6 +98,7 @@ def analyze_gann(
             "historical_validation": (
                 evaluate_gann_history(frame, selected_config) if include_backtest else {}
             ),
+            "anchor_lifecycles": anchor_lifecycles(frame, selected_config),
             "config": {
                 "pivot_window": selected_config.pivot_window,
                 "pivot_atr_factor": selected_config.pivot_atr_factor,
@@ -105,6 +106,12 @@ def analyze_gann(
                 "atr_multiplier": selected_config.atr_multiplier,
                 "cycle_lookback": selected_config.cycle_lookback,
                 "window_tolerance": selected_config.window_tolerance,
+                "price_cluster_tolerance_atr": (
+                    selected_config.price_cluster_tolerance_atr
+                ),
+                "visible_price_zones": selected_config.visible_price_zones,
+                "visible_confluence_zones": selected_config.visible_confluence_zones,
+                "visible_time_window_score": selected_config.visible_time_window_score,
             },
         }
     )
